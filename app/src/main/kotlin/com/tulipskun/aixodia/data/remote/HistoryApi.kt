@@ -1544,10 +1544,15 @@ class HistoryApi(
             client.newCall(req).execute().use { response ->
                 if (!response.isSuccessful) return@use null
                 val body = JSONObject(response.body?.string().orEmpty())
+                // `ok` must be there, not defaulted: a dashboard host answers
+                // /healthz with 200 and a page, and defaulting ok to true made
+                // that page look like a healthy engine. A wrong address then
+                // never healed, because discovery believed it had one.
+                if (!body.has("ok")) return@use null
                 NodeInfo(
                     tunnelUrl = base,
                     version = body.optString("version"),
-                    online = body.optBoolean("ok", true),
+                    online = body.optBoolean("ok", false),
                     startedAt = body.optLong("started"),
                     bootAt = body.optLong("boot"),
                 )

@@ -109,6 +109,14 @@ class DaemonDiscovery(
             return
         }
         if (node == null) {
+            // The saved address did not answer as an engine. A phone that stored
+            // a dashboard host stays on it forever otherwise, because every
+            // request succeeds and only the shape is wrong. Reset to the
+            // built-in address once and let the next poll answer.
+            if (settings.healDaemon()) {
+                Log.i(TAG, "daemon address was not an engine; reset to the built-in one")
+                socket.reconnect()
+            }
             report(DiscoveryPhase.IDLE, tunnelUrl = current.daemonUrl)
             return
         }

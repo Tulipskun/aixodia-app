@@ -276,6 +276,21 @@ class SettingsStore(private val ctx: Context) {
         }
     }
 
+    /**
+     * Resets a stored address that is not an engine back to the built-in one.
+     *
+     * A phone that saved the dashboard host (an app built before the engine got
+     * its own hostname) keeps dialling it forever: the host answers /healthz
+     * with a page, so discovery had something to call healthy and never adopted
+     * the default. Called only when the address failed to answer as an engine.
+     */
+    suspend fun healDaemon(): Boolean {
+        val stored = ctx.ds.data.first()[daemonUrl]?.trim()?.trimEnd('/').orEmpty()
+        if (stored == DEFAULT_DAEMON_URL.trimEnd('/')) return false
+        saveDaemon(DEFAULT_DAEMON_URL)
+        return true
+    }
+
     /** Switch session only — never touches connection settings. */
     suspend fun saveSession(sess: String) {
         ctx.ds.edit { it[sessionId] = sess.trim() }
