@@ -79,7 +79,7 @@ class AccessLoginTest {
         assertTrue(url, url.startsWith("https://aixodia.dpdns.org/cdn-cgi/access/login/aixodia.dpdns.org?"))
         assertTrue(url, url.contains("kid="))
         val redirect = Uri.parse(url).getQueryParameter("redirect_url") ?: ""
-        assertEquals("/v1/auth/callback?code=code-1", redirect)
+        assertEquals("/api/auth/callback?code=code-1", redirect)
         assertFalse("redirect_url must be relative: $redirect", redirect.startsWith("http"))
         assertFalse("The 404 shape must not come back: $url", url.contains("/cdn-cgi/access/login?"))
     }

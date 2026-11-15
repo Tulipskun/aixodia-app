@@ -73,7 +73,7 @@ internal class FakeDaemon : AutoCloseable {
             lastBodies[path] = bodyChars.toString()
 
             counted.computeIfAbsent(path) { AtomicInteger() }.incrementAndGet()
-            // Longest prefix wins: an events poll under /v1/runs/{id} must not
+            // Longest prefix wins: an events poll under /api/runs/{id} must not
             // be answered by the rule for the run itself.
             val rule = rules.filter { path.startsWith(it.prefix) }
                 .maxByOrNull { it.prefix.length }

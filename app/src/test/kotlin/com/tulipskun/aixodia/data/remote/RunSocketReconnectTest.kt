@@ -51,13 +51,13 @@ class RunSocketReconnectTest {
     /** A daemon that answers the probe and the run, and is sick on the event poll. */
     private fun sickEvents(): FakeDaemon {
         val daemon = FakeDaemon()
-        daemon.respond("/v1/sessions", 200, """{"sessions":[]}""")
-        daemon.respond("/v1/runs/run-1", 200, """{"run":{"status":"running"}}""")
-        daemon.respond("/v1/runs/run-1/events", 503)
+        daemon.respond("/api/sessions", 200, """{"sessions":[]}""")
+        daemon.respond("/api/runs/run-1", 200, """{"run":{"status":"running"}}""")
+        daemon.respond("/api/runs/run-1/events", 503)
         return daemon
     }
 
-    private fun polls(daemon: FakeDaemon): Int = daemon.hits("/v1/runs/run-1/events")
+    private fun polls(daemon: FakeDaemon): Int = daemon.hits("/api/runs/run-1/events")
 
     /** Waits until the predicate holds, returning how many milliseconds it took, or null. */
     private fun waitedUntil(millis: Long, predicate: () -> Boolean): Long? {

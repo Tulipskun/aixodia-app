@@ -51,7 +51,7 @@ class RunSocketAuthTest {
     @Test
     fun `a refused credential stops probing instead of dialling forever`() {
         val daemon = FakeDaemon()
-        daemon.respond("/v1/sessions", 401)
+        daemon.respond("/api/sessions", 401)
         val socket = socket(daemon)
         try {
             openAndSettle(socket, 1_500)
@@ -60,7 +60,7 @@ class RunSocketAuthTest {
             assertEquals(
                 "a 401 gives the same answer whenever it is asked; asking twice is the bug",
                 1,
-                daemon.hits("/v1/sessions"),
+                daemon.hits("/api/sessions"),
             )
         } finally {
             socket.close()
@@ -71,9 +71,9 @@ class RunSocketAuthTest {
     @Test
     fun `a refused run stream ends instead of backing off into it`() {
         val daemon = FakeDaemon()
-        daemon.respond("/v1/sessions", 200, """{"sessions":[]}""")
-        daemon.respond("/v1/runs/run-1", 200, """{"run":{"status":"running"}}""")
-        daemon.respond("/v1/runs/run-1/events", 403)
+        daemon.respond("/api/sessions", 200, """{"sessions":[]}""")
+        daemon.respond("/api/runs/run-1", 200, """{"run":{"status":"running"}}""")
+        daemon.respond("/api/runs/run-1/events", 403)
         val socket = socket(daemon, remembered = "run-1")
         try {
             openAndSettle(socket, 1_500)
@@ -82,7 +82,7 @@ class RunSocketAuthTest {
             assertEquals(
                 "the stream must stop the moment the daemon refuses it, not redial on a curve",
                 1,
-                daemon.hits("/v1/runs/run-1/events"),
+                daemon.hits("/api/runs/run-1/events"),
             )
         } finally {
             socket.close()
@@ -95,9 +95,9 @@ class RunSocketAuthTest {
         // The other half of the fix: a 5xx is a link that may come back, and
         // stopping for that would leave the chat dead after a tunnel blip.
         val daemon = FakeDaemon()
-        daemon.respond("/v1/sessions", 200, """{"sessions":[]}""")
-        daemon.respond("/v1/runs/run-1", 200, """{"run":{"status":"running"}}""")
-        daemon.respond("/v1/runs/run-1/events", 503)
+        daemon.respond("/api/sessions", 200, """{"sessions":[]}""")
+        daemon.respond("/api/runs/run-1", 200, """{"run":{"status":"running"}}""")
+        daemon.respond("/api/runs/run-1/events", 503)
         val socket = socket(daemon, remembered = "run-1")
         try {
             openAndSettle(socket, 3_500)
@@ -105,7 +105,7 @@ class RunSocketAuthTest {
             assertEquals(0, socket.lastError.value)
             assertTrue(
                 "a 503 is not a refusal, so the backoff has to keep dialing",
-                daemon.hits("/v1/runs/run-1/events") >= 2,
+                daemon.hits("/api/runs/run-1/events") >= 2,
             )
         } finally {
             socket.close()
@@ -116,15 +116,15 @@ class RunSocketAuthTest {
     @Test
     fun `a run that is gone keeps its own answer, not an auth failure`() {
         val daemon = FakeDaemon()
-        daemon.respond("/v1/sessions", 200, """{"sessions":[]}""")
-        daemon.respond("/v1/runs/run-1", 200, """{"run":{"status":"running"}}""")
-        daemon.respond("/v1/runs/run-1/events", 404)
+        daemon.respond("/api/sessions", 200, """{"sessions":[]}""")
+        daemon.respond("/api/runs/run-1", 200, """{"run":{"status":"running"}}""")
+        daemon.respond("/api/runs/run-1/events", 404)
         val socket = socket(daemon, remembered = "run-1")
         try {
             openAndSettle(socket, 1_500)
             assertEquals(ConnState.ONLINE, socket.state.value)
             assertEquals(0, socket.lastError.value)
-            assertEquals(1, daemon.hits("/v1/runs/run-1/events"))
+            assertEquals(1, daemon.hits("/api/runs/run-1/events"))
         } finally {
             socket.close()
             daemon.close()
