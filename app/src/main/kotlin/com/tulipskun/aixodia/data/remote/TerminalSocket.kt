@@ -116,6 +116,7 @@ class TerminalSocket(
 ) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val client = OkHttpClient.Builder()
+        .dns(ReachableDns)
         // A ping every twenty seconds notices a tunnel edge that stopped
         // forwarding, without tearing down an idle but healthy shell.
         .pingInterval(Duration.ofSeconds(20))

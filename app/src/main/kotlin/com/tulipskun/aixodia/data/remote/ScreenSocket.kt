@@ -507,6 +507,7 @@ class ScreenSocket(
          * expects a heartbeat.
          */
         private fun defaultClient(): OkHttpClient = OkHttpClient.Builder()
+            .dns(ReachableDns)
             .readTimeout(0, java.util.concurrent.TimeUnit.MILLISECONDS)
             .pingInterval(20, java.util.concurrent.TimeUnit.SECONDS)
             .build()

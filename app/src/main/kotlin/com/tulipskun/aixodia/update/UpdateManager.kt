@@ -25,7 +25,7 @@ import java.io.File
 object UpdateManager {
     const val REPO = "Tulipskun/aixodia-app"
     private const val VERSION_ASSET = "AIxodia-version.json"
-    private val client = OkHttpClient()
+    private val client = OkHttpClient.Builder().dns(com.tulipskun.aixodia.data.remote.ReachableDns).build()
 
     data class Update(
         val tag: String,

@@ -104,6 +104,7 @@ class RunSocket(
     override val frames: SharedFlow<AiOutput> = _frames.asSharedFlow()
 
     private val http = OkHttpClient.Builder()
+        .dns(ReachableDns)
         .connectTimeout(20, TimeUnit.SECONDS)
         .readTimeout(60, TimeUnit.SECONDS)
         .writeTimeout(60, TimeUnit.SECONDS)

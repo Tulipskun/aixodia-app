@@ -41,6 +41,7 @@ class FilesApi(
     private val clientToken: ClientToken = ClientToken.passThrough,
 ) {
     private val client = OkHttpClient.Builder()
+        .dns(ReachableDns)
         .connectTimeout(20, TimeUnit.SECONDS)
         .readTimeout(0, TimeUnit.MILLISECONDS)
         .writeTimeout(0, TimeUnit.MILLISECONDS)

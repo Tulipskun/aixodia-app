@@ -32,7 +32,7 @@ object DeviceFlow {
     private const val CODE_PATH = "/auth/device/code"
     private const val TOKEN_PATH = "/auth/device/token"
 
-    private val client: OkHttpClient by lazy { OkHttpClient() }
+    private val client: OkHttpClient by lazy { OkHttpClient.Builder().dns(ReachableDns).build() }
     private val jsonType = "application/json".toMediaType()
 
     /** The code to show the user and the address to open. */

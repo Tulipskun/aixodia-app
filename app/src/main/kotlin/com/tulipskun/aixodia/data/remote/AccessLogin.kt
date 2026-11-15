@@ -92,7 +92,7 @@ object AccessLogin {
         pendingVerifier = ""
     }
 
-    private val http = OkHttpClient.Builder().build()
+    private val http = OkHttpClient.Builder().dns(ReachableDns).build()
 
     /** Registers the attempt and returns the URL to open in the browser. */
     suspend fun begin(origin: String, verifier: String): String = withContext(Dispatchers.IO) {

@@ -594,6 +594,7 @@ internal fun pageTurns(rows: List<TurnRow>, beforeSeq: Long, limit: Int): List<T
 class HistoryApi(
     private val settings: SettingsStore,
     private val client: OkHttpClient = OkHttpClient.Builder()
+        .dns(ReachableDns)
         .connectTimeout(20, TimeUnit.SECONDS)
         .readTimeout(90, TimeUnit.SECONDS)
         .writeTimeout(30, TimeUnit.SECONDS)
@@ -1293,6 +1294,7 @@ class HistoryApi(
     // Uploads can be large and slow; the shared client's 150s call timeout would
     // cut a big video off halfway. This one waits, and streams the body.
     private val uploadClient = OkHttpClient.Builder()
+        .dns(ReachableDns)
         .connectTimeout(30, TimeUnit.SECONDS)
         .writeTimeout(10, TimeUnit.MINUTES)
         .readTimeout(60, TimeUnit.SECONDS)
