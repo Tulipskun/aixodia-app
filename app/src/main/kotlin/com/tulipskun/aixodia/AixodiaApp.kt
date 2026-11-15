@@ -19,6 +19,10 @@ class AixodiaApp : Application() {
     override fun onCreate() {
         super.onCreate()
         CrashLog.install(this)
+        // The phone's default network can be a VPN that answers no names, so the
+        // resolver needs the manager to ask the network underneath it.
+        com.tulipskun.aixodia.data.remote.ReachableDns.connectivity =
+            getSystemService(android.content.Context.CONNECTIVITY_SERVICE) as android.net.ConnectivityManager
         container = AppContainer(this)
         // Observe the Engine's announced URL and health state while the app is
         // running. The default Named Tunnel URL is already configured locally;

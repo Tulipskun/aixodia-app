@@ -31,6 +31,18 @@ import okhttp3.Dns
  */
 object ReachableDns : Dns {
 
+    /**
+     * The phone's connectivity manager, set once by the app.
+     *
+     * Android refuses a plain UDP query to a public resolver from an ordinary
+     * app, and a VPN can own the default route, so the only way to ask the
+     * network underneath is to bind the socket to that network by handle. The
+     * manager is held here rather than passed in because [Dns] is built by
+     * OkHttp, which has no place to carry it.
+     */
+    @Volatile
+    var connectivity: android.net.ConnectivityManager? = null
+
     /** Resolvers asked only when the phone's own cannot answer. */
     private val FALLBACK = listOf("1.1.1.1", "1.0.0.1", "8.8.8.8")
 
@@ -93,13 +105,14 @@ object ReachableDns : Dns {
     private fun query(hostname: String, server: String): List<InetAddress> {
         val id = (System.nanoTime() and 0xFFFF).toInt()
         val packet = buildQuery(id, hostname)
+        val network = nonVpnNetwork()
         java.net.DatagramSocket().use { socket ->
             socket.soTimeout = 2_000
-            // A VPN that made itself the default network would take this query
-            // to its own resolver, which is the one that just answered nothing.
-            // The socket is pinned to the interface that actually routes the
-            // plain internet when one can be found.
-            runCatching { socket.bind(java.net.InetSocketAddress(wifiAddress(), 0)) }
+            // Sending the ordinary way would go to the VPN's resolver, which is
+            // the one that just answered nothing. Android also refuses an
+            // unbound UDP query from an ordinary app, so binding to the network
+            // itself is what makes the query legal as well as correctly routed.
+            if (network != null) runCatching { network.bindSocket(socket) }
             socket.send(java.net.DatagramPacket(packet, packet.size, InetAddress.getByName(server), 53))
             val buffer = ByteArray(1024)
             val reply = java.net.DatagramPacket(buffer, buffer.size)
@@ -108,28 +121,16 @@ object ReachableDns : Dns {
         }
     }
 
-    /**
-     * An address on the phone's own network rather than on a VPN.
-     *
-     * A v4 address that is not inside the Tailscale range and not loopback is
-     * what a Wi-Fi or carrier interface has. The Tailscale adapter also carries
-     * one, which is why the check is on the address and not on the name.
-     */
-    private fun wifiAddress(): InetAddress? = runCatching {
-        java.net.NetworkInterface.getNetworkInterfaces()
-            .asSequence()
-            .filter { it.isUp && !it.isLoopback }
-            .flatMap { it.inetAddresses.asSequence() }
-            .filterIsInstance<Inet4Address>()
-            .firstOrNull { !it.isLinkLocalAddress && !isTailscale(it) }
-    }.getOrNull()
-
-    /** The 100.64/10 block Tailscale hands out, and its private prefix. */
-    private fun isTailscale(address: Inet4Address): Boolean {
-        val b = address.address
-        val first = b[0].toInt() and 0xFF
-        val second = b[1].toInt() and 0xFF
-        return first == 100 && second in 64..127
+    /** The active network that is not a VPN, when there is one. */
+    private fun nonVpnNetwork(): android.net.Network? {
+        val manager = connectivity ?: return null
+        return runCatching {
+            manager.allNetworks.firstOrNull { candidate ->
+                val caps = manager.getNetworkCapabilities(candidate) ?: return@firstOrNull false
+                caps.hasCapability(android.net.NetworkCapabilities.NET_CAPABILITY_INTERNET) &&
+                    !caps.hasTransport(android.net.NetworkCapabilities.TRANSPORT_VPN)
+            }
+        }.getOrNull()
     }
 
     private fun buildQuery(id: Int, hostname: String): ByteArray {
