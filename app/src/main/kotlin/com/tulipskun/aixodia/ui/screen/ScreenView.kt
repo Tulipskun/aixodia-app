@@ -488,14 +488,10 @@ class ScreenView(context: Context) : View(context) {
         markCursor(wantX, wantY)
 
         // Held down for a double-tap-and-drag: the button stays pressed and the
-        // object follows the pointer.
-        if (held) {
-            // Already pressed: moving the pointer is what drags.
-            socket.move(wantX, wantY)
-            return
-        }
-        // One move per frame; a finger reports far faster than the machine can
-        // act on it and a queue of stale positions only adds delay.
+        // object follows the pointer. The gate applies here too — a held drag
+        // reports motion at the touch panel's rate, not the machine's, and a
+        // queue of positions the pointer has already left only adds lag to the
+        // window being dragged. The last one is always sent on release.
         val now = System.currentTimeMillis()
         if (now - lastMoveSent >= MOVE_INTERVAL_MS) {
             socket.move(wantX, wantY)
@@ -516,7 +512,12 @@ class ScreenView(context: Context) : View(context) {
         val now = System.currentTimeMillis()
 
         if (held) {
-            // The press that a double tap started is let go here.
+            // The press that a double tap started is let go here. A move that
+            // was still owed is dropped rather than left to fire after the
+            // release: the button goes up at the newest position below, and a
+            // move arriving later would drag an object nothing is holding.
+            pointerSettled = true
+            removeCallbacks(settleRun)
             at?.let { (x, y) -> socket.up(x, y, "left") }
             held = false
             return

@@ -66,7 +66,7 @@ fun ScreenPanel(
     // The video decoder, created only when the engine says it is sending video.
     // Building one for a JPEG stream would take a decoder from another app for
     // nothing.
-    val video = remember { VideoSurface(onFirstFrame = {}) }
+    val video = remember { VideoSurface(onFirstFrame = {}, onNeedKeyframe = { socket.requestKeyframe() }) }
     var videoMode by remember { mutableStateOf(false) }
     var videoHasPicture by remember { mutableStateOf(false) }
 

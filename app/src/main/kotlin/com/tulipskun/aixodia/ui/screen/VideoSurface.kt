@@ -22,6 +22,16 @@ import java.nio.ByteBuffer
  */
 class VideoSurface(
     private val onFirstFrame: () -> Unit,
+    /**
+     * Asked for a fresh keyframe when an access unit could not be handed to the
+     * decoder.
+     *
+     * Dropping one frame is not a lost frame: the frames after it are predicted
+     * from it, so everything until the next keyframe decodes against a picture
+     * the decoder never had — smeared blocks that stay until the stream happens
+     * to send a keyframe of its own. Asking is the only way to shorten that.
+     */
+    private val onNeedKeyframe: () -> Unit = {},
 ) {
     private var codec: MediaCodec? = null
     private var surface: Surface? = null
@@ -80,9 +90,16 @@ class VideoSurface(
         if (awaitingKeyframe && !keyframe) return
         handler.post {
             val decoder = codec
+            var dropped = false
             runCatching {
                 val input = decoder.dequeueInputBuffer(TIMEOUT_US)
-                if (input < 0) return@runCatching
+                if (input < 0) {
+                    // No buffer means this access unit is thrown away, and the
+                    // ones behind it reference it. Recover with a keyframe rather
+                    // than waiting for the smearing to reach the next one.
+                    dropped = true
+                    return@runCatching
+                }
                 val buffer: ByteBuffer = decoder.getInputBuffer(input) ?: return@runCatching
                 buffer.clear()
                 if (buffer.capacity() < accessUnit.size) {
@@ -110,6 +127,10 @@ class VideoSurface(
             }.onFailure { error ->
                 Log.w(TAG, "decode failed: ${error.message}")
                 restart()
+            }
+            if (dropped) {
+                awaitingKeyframe = true
+                onNeedKeyframe()
             }
         }
     }
