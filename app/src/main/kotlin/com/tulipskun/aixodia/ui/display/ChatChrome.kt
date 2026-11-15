@@ -193,9 +193,14 @@ fun SetupNeeded(
                             // engine: the engine may be down, and it serves no
                             // /auth/device/* route at all.
                             val origin = com.tulipskun.aixodia.DEFAULT_AUTH_URL
+                            android.util.Log.i("SignIn", "requesting device code from $origin")
                             val code = com.tulipskun.aixodia.data.remote.DeviceFlow
                                 .requestCode(origin, android.os.Build.MODEL ?: "Android")
                             userCode = code.userCode
+                            android.util.Log.i(
+                                "SignIn",
+                                "code ${code.userCode} interval=${code.interval}s expires=${code.expiresIn}s",
+                            )
                             // The browser does the login and the Approve page.
                             context.startActivity(
                                 android.content.Intent(
@@ -208,15 +213,23 @@ fun SetupNeeded(
                             // anything else can fail.
                             val token = com.tulipskun.aixodia.data.remote.DeviceFlow
                                 .awaitToken(origin, code)
+                            android.util.Log.i("SignIn", "got a token, ${token.length} chars")
                             store.saveAccessCookie(token)
+                            android.util.Log.i("SignIn", "token stored; signed in")
                             userCode = ""
                             busy = false
                             onSignedIn()
                         } catch (refused: com.tulipskun.aixodia.data.remote.DeviceFlow.Refused) {
+                            android.util.Log.w("SignIn", "refused: ${refused.code} ${refused.message}")
                             busy = false
                             userCode = ""
                             error = refused.message ?: "Unable to sign in"
                         } catch (failure: Throwable) {
+                            android.util.Log.e(
+                                "SignIn",
+                                "sign-in threw ${failure::class.java.name}: ${failure.message}",
+                                failure,
+                            )
                             busy = false
                             userCode = ""
                             error = failure.message ?: "Unable to sign in"

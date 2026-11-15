@@ -235,6 +235,7 @@ class TerminalSocket(
     /** Opens every saved tab, if the window is not already up. */
     @Synchronized
     fun open() {
+        Log.i(TAG, "open(): links=${links.keys.take(6)} wanted=$wanted")
         wanted = true
         autoNew = true
         // A window that is already dialing or up owns its links. This also makes
@@ -636,6 +637,7 @@ class TerminalSocket(
      */
     @Synchronized
     private fun reconcileLinks() {
+        Log.i(TAG, "reconcileLinks(): wanted=$wanted ids=${_sessions.value.take(6)} links=${links.keys.take(6)}")
         if (!wanted) return
         val ids = _sessions.value
 
@@ -943,6 +945,7 @@ class TerminalSocket(
                 private fun stale(): Boolean = token != link.connection.get()
 
                 override fun onOpen(webSocket: WebSocket, response: Response) {
+                    Log.i(TAG, "socket open: id='${link.id}' stale=${stale()}")
                     if (stale()) return
                     link.updateDetail("connected; waiting for the shell")
                 }
@@ -990,8 +993,9 @@ class TerminalSocket(
                 }
 
                 override fun onClosed(webSocket: WebSocket, code: Int, reason: String) {
+                    Log.i(TAG, "socket closed: code=$code reason='$reason' stale=${stale()} ready=${readySeen.get()} id='${link.id}'")
                     if (stale()) return
-                    Log.i(TAG, "socket closed: code=$code reason='$reason' ready=${readySeen.get()} id=${link.id}")
+                    Log.i(TAG, "socket closed (live): code=$code reason='$reason' ready=${readySeen.get()} id='${link.id}'")
                     if (readySeen.get()) {
                         ended.complete(false)
                     } else {
@@ -1000,8 +1004,9 @@ class TerminalSocket(
                 }
 
                 override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
+                    Log.w(TAG, "socket failed: ${t.javaClass.simpleName}: ${t.message} stale=${stale()} ready=${readySeen.get()}")
                     if (stale()) return
-                    Log.w(TAG, "terminal socket failed: ${t.message}", t)
+                    Log.w(TAG, "socket failed", t)
                     link.updateDetail("connection failed: ${t.message.orEmpty()}")
                     if (readySeen.get()) {
                         ended.complete(false)
