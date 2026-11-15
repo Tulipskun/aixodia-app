@@ -3,6 +3,7 @@ package com.tulipskun.aixodia.data.remote
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
+import java.io.IOException
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -82,19 +83,44 @@ object DeviceFlow {
                 .url(origin.trimEnd('/') + CODE_PATH)
                 .post(body.toRequestBody(jsonType))
                 .build()
-            client.newCall(request).execute().use { response ->
-                val text = response.body?.string().orEmpty()
-                if (!response.isSuccessful) throw refused(response.code, text)
-                val json = JSONObject(text)
-                DeviceCode(
-                    deviceCode = json.getString("device_code"),
-                    userCode = json.getString("user_code"),
-                    verificationUrl = json.getString("verification_url"),
-                    interval = json.optInt("interval", 5),
-                    expiresIn = json.optInt("expires_in", 600),
-                )
+            // Asking for a code is the one step the user watches: a lookup that
+            // misses once (a VPN whose interface has no resolver, a network
+            // mid-switch) is retried rather than reported as a refusal, which
+            // would say the account is wrong when the network was.
+            val answer = retrying {
+                val response = client.newCall(request).execute()
+                response.use { it.code to it.body?.string().orEmpty() }
+            }
+            val (status, text) = answer
+            if (status !in 200..299) throw refused(status, text)
+            val json = JSONObject(text)
+            DeviceCode(
+                deviceCode = json.getString("device_code"),
+                userCode = json.getString("user_code"),
+                verificationUrl = json.getString("verification_url"),
+                interval = json.optInt("interval", 5),
+                expiresIn = json.optInt("expires_in", 600),
+            )
+        }
+
+    /**
+     * Runs [block], retrying a network-level failure a few times.
+     *
+     * Only the transport is retried: an HTTP answer, including a refusal, is
+     * returned as it came, because asking again cannot change it.
+     */
+    private suspend fun <T> retrying(attempts: Int = 3, block: () -> T): T {
+        var last: IOException? = null
+        repeat(attempts) { attempt ->
+            try {
+                return block()
+            } catch (network: IOException) {
+                last = network
+                if (attempt < attempts - 1) delay(1_000L * (attempt + 1))
             }
         }
+        throw last ?: IOException("Unable to reach the sign-in service")
+    }
 
     /** One poll. Never throws for the normal waiting states. */
     suspend fun poll(origin: String, deviceCode: String): Poll =
@@ -105,17 +131,33 @@ object DeviceFlow {
                 .url(origin.trimEnd('/') + TOKEN_PATH)
                 .post(body.toRequestBody(jsonType))
                 .build()
-            client.newCall(request).execute().use { response ->
-                val text = response.body?.string().orEmpty()
+            val response = try {
+                client.newCall(request).execute()
+            } catch (network: IOException) {
+                // A poll is a question that can be asked again; a DNS answer
+                // that is missing this second (a VPN without a resolver, a
+                // network that just changed) is not an answer at all. The code
+                // lives for ten minutes, so waiting out a dip costs nothing.
+                return@withContext Poll.Pending
+            }
+            response.use {
+                val text = it.body?.string().orEmpty()
                 val json = runCatching { JSONObject(text) }.getOrNull()
                     ?: return@use Poll.Failed("Unable to read the answer")
                 when (json.optString("status")) {
                     "ok" -> Poll.Active(json.getString("access_token"))
-                    "authorization_pending" -> Poll.Pending
+                    // RFC 8628 calls this `authorization_pending`; the Worker
+                    // answers the short `pending`. The longer name was read
+                    // here and nowhere else, so the first poll of every
+                    // sign-in fell through to Failed and the browser's
+                    // approval arrived with nothing left to collect it.
+                    "pending", "authorization_pending" -> Poll.Pending
                     "slow_down" -> Poll.SlowDown
                     "delivered" -> Poll.Delivered
                     "expired" -> Poll.Failed("The code expired. Start again.")
                     "denied" -> Poll.Failed("The sign-in was denied.")
+                    "revoked" -> Poll.Failed("The sign-in was revoked. Start again.")
+                    "not_found" -> Poll.Failed("That code is not known. Start again.")
                     else -> Poll.Failed(json.optString("error", "Sign-in failed"))
                 }
             }
