@@ -674,11 +674,18 @@ class TerminalSocket(
             return
         }
 
+        Log.i(TAG, "reconcile: sessions=${ids.size} ${ids.take(6)} links=${links.keys.take(6)} active=${activeLink?.id ?: "none"}")
         ids.forEach { id ->
             val link = links[id]
             when {
-                link == null -> createLink(id).open()
-                link.state.value == TermState.CLOSED -> link.open()
+                link == null -> {
+                    Log.i(TAG, "reconcile: attaching $id (no link for it yet)")
+                    createLink(id).open()
+                }
+                link.state.value == TermState.CLOSED -> {
+                    Log.i(TAG, "reconcile: re-opening $id (link was CLOSED)")
+                    link.open()
+                }
             }
         }
 
@@ -907,6 +914,11 @@ class TerminalSocket(
             // fallback for the first frame before Android measures the view.
             val (cols, rows) = pendingSize ?: (80 to 24)
             link.updateDetail("opening terminal stream")
+            Log.i(
+                TAG,
+                "dial: id='${wantedId.ifBlank { "<new>" }}' state=${link.state.value} " +
+                    "${cols}x${rows} backoff=${backoff}ms",
+            )
             val ticket = try {
                 // The ticket request authenticates with the Engine session, like
                 // every other transport.
@@ -947,6 +959,7 @@ class TerminalSocket(
                         is TermEvent.Exit -> {
                             link.lastEvent = ev
                             link.setState(TermState.ENDED)
+                            Log.i(TAG, "shell ended on its own: id=${link.id} code=${ev.code}")
                             _events.trySend(TabEvent(link.id, ev))
                             opened.complete(true)
                             ended.complete(true)
@@ -955,6 +968,7 @@ class TerminalSocket(
                         is TermEvent.Failed -> {
                             link.lastEvent = ev
                             link.setState(TermState.ENDED)
+                            Log.w(TAG, "engine refused the shell: id=${link.id} ${ev.message}")
                             _events.trySend(TabEvent(link.id, ev))
                             opened.complete(true)
                             ended.complete(true)
@@ -977,6 +991,7 @@ class TerminalSocket(
 
                 override fun onClosed(webSocket: WebSocket, code: Int, reason: String) {
                     if (stale()) return
+                    Log.i(TAG, "socket closed: code=$code reason='$reason' ready=${readySeen.get()} id=${link.id}")
                     if (readySeen.get()) {
                         ended.complete(false)
                     } else {
