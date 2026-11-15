@@ -46,13 +46,20 @@ object ReachableDns : Dns {
     }
 
     override fun lookup(hostname: String): List<InetAddress> {
-        val all = try {
-            Dns.SYSTEM.lookup(hostname)
-        } catch (err: UnknownHostException) {
-            // A VPN with no resolver fails here rather than returning nothing.
-            askPublicResolvers(hostname) ?: throw err
-        }
-        return filterForTest(all, hasIpv6)
+        // The system's own resolver is asked first, because on a healthy phone
+        // it is the right one and knows local names this code does not. It is
+        // not trusted to be the only one: a VPN that is the default network can
+        // publish itself as the sole resolver and answer nothing for a name the
+        // Wi-Fi underneath resolves, and some Android builds report that as an
+        // empty list rather than an exception.
+        val system = runCatching { Dns.SYSTEM.lookup(hostname) }.getOrNull()
+        if (!system.isNullOrEmpty()) return filterForTest(system, hasIpv6)
+        val asked = askPublicResolvers(hostname)
+        if (!asked.isNullOrEmpty()) return filterForTest(asked, hasIpv6)
+        // Nothing answered: report the system's own failure when there was one,
+        // since it names the phone's network rather than a resolver.
+        system?.let { return it }
+        throw UnknownHostException("no resolver could answer for $hostname")
     }
 
     /** The rule itself, with the phone's own state supplied so it can be tested. */
@@ -88,12 +95,41 @@ object ReachableDns : Dns {
         val packet = buildQuery(id, hostname)
         java.net.DatagramSocket().use { socket ->
             socket.soTimeout = 2_000
+            // A VPN that made itself the default network would take this query
+            // to its own resolver, which is the one that just answered nothing.
+            // The socket is pinned to the interface that actually routes the
+            // plain internet when one can be found.
+            runCatching { socket.bind(java.net.InetSocketAddress(wifiAddress(), 0)) }
             socket.send(java.net.DatagramPacket(packet, packet.size, InetAddress.getByName(server), 53))
             val buffer = ByteArray(1024)
             val reply = java.net.DatagramPacket(buffer, buffer.size)
             socket.receive(reply)
             return parseAnswer(buffer, reply.length, id)
         }
+    }
+
+    /**
+     * An address on the phone's own network rather than on a VPN.
+     *
+     * A v4 address that is not inside the Tailscale range and not loopback is
+     * what a Wi-Fi or carrier interface has. The Tailscale adapter also carries
+     * one, which is why the check is on the address and not on the name.
+     */
+    private fun wifiAddress(): InetAddress? = runCatching {
+        java.net.NetworkInterface.getNetworkInterfaces()
+            .asSequence()
+            .filter { it.isUp && !it.isLoopback }
+            .flatMap { it.inetAddresses.asSequence() }
+            .filterIsInstance<Inet4Address>()
+            .firstOrNull { !it.isLinkLocalAddress && !isTailscale(it) }
+    }.getOrNull()
+
+    /** The 100.64/10 block Tailscale hands out, and its private prefix. */
+    private fun isTailscale(address: Inet4Address): Boolean {
+        val b = address.address
+        val first = b[0].toInt() and 0xFF
+        val second = b[1].toInt() and 0xFF
+        return first == 100 && second in 64..127
     }
 
     private fun buildQuery(id: Int, hostname: String): ByteArray {
