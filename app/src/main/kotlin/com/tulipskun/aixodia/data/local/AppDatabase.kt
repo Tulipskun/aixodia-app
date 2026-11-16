@@ -187,6 +187,10 @@ interface MessageDao {
     @Query("DELETE FROM messages WHERE sessionId = :sid AND seq = :seq")
     suspend fun deleteOne(sid: String, seq: Long)
 
+    /** Removes everything at or above [from], which is how an undo is followed. */
+    @Query("DELETE FROM messages WHERE sessionId = :sid AND seq >= :from")
+    suspend fun deleteFrom(sid: String, from: Long)
+
     @Query("DELETE FROM messages WHERE sessionId = :sid")
     suspend fun deleteSession(sid: String)
 

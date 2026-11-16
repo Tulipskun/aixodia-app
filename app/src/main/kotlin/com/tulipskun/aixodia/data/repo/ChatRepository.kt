@@ -17,6 +17,7 @@ import com.tulipskun.aixodia.data.model.ChatSession
 import com.tulipskun.aixodia.data.remote.ChatTransport
 import com.tulipskun.aixodia.data.remote.ConnState
 import com.tulipskun.aixodia.data.remote.HistoryApi
+import com.tulipskun.aixodia.data.remote.TurnRow
 import com.tulipskun.aixodia.data.remote.toStoredTotals
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CancellationException
@@ -374,6 +375,16 @@ class ChatRepository(
     fun retryTurn(sid: String): Boolean =
         if (sid.isBlank()) false else socket.retry(sid, "$sid:retry:${System.currentTimeMillis()}")
 
+    /**
+     * Takes back the newest question and everything it produced.
+     *
+     * Null means the daemon did not do it — an old engine without the endpoint,
+     * or a request that failed — so the thread keeps what it has rather than
+     * showing rows the database still holds.
+     */
+    suspend fun undoTurn(sid: String): List<TurnRow>? =
+        if (sid.isBlank()) null else history.undo(sid)
+
     /** The provider and model the daemon currently offers, for the picker. */
     suspend     fun models(): List<ProviderView> = history.models()
 
@@ -484,6 +495,19 @@ class ChatRepository(
 
     /** The highest stored seq, so a turn can stamp only the rows it created. */
     suspend fun maxSeq(sid: String): Long = db.messages().maxSeq(sid)
+
+    /**
+     * Drops the cached rows above [seq], which is how the phone follows an undo.
+     *
+     * The daemon already deleted the exchange from D1; these rows are only its
+     * copy. Removing them by the boundary rather than by identity means a tool
+     * row the phone never saw cached is still covered, and nothing below the
+     * boundary — an earlier question and its answer — is touched.
+     */
+    suspend fun dropTurnsAbove(sid: String, seq: Long) {
+        if (sid.isEmpty()) return
+        runCatchingCancellable { db.messages().deleteFrom(sid, seq + 1) }
+    }
 
     /**
      * True when the last committed question has no answer after it. A pending

@@ -484,6 +484,20 @@ fun ChatScreen(
     val composerCommands = listOf(
         ComposerCommand(stringResource(R.string.new_chat)) { vm.newChat() },
         ComposerCommand(stringResource(R.string.stop), enabled = busy) { vm.stop() },
+        // Asking the same question again is the one repair a chat needs most:
+        // the turn failed, or the answer was not what was wanted. The daemon
+        // keeps the question and drops only the answer, so the retry does not
+        // add a second copy of the prompt.
+        ComposerCommand(
+            stringResource(R.string.retry),
+            enabled = !busy && messages.any { it.role == "model" || it.role == "assistant" },
+        ) { vm.retryLast() },
+        // Undo takes back the newest question and everything it produced, so it
+        // is available exactly when there is an exchange to take back.
+        ComposerCommand(
+            stringResource(R.string.undo),
+            enabled = !busy && messages.any { it.role == "user" },
+        ) { vm.undoLast() },
         ComposerCommand(stringResource(R.string.clear_draft), enabled = draft.isNotBlank()) { vm.changeDraft("") },
         ComposerCommand(stringResource(R.string.refresh)) { vm.refresh() },
         // The engine's own backup, on a page of its own. The run belongs to the

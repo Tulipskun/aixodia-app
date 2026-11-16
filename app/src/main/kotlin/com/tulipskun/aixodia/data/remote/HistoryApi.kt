@@ -583,6 +583,42 @@ private fun stringList(arr: JSONArray?): List<String> {
  * cache showed the start of the thread and numbered the next send from there,
  * colliding with turns it had never downloaded.
  */
+/**
+ * One `turns` array from the Engine, in the order a thread reads it.
+ *
+ * Both the paged read and undo convert the same rows, and a second copy of the
+ * field list is how the two drift apart — a field added to one and forgotten in
+ * the other shows as a blank column only on whichever path was missed.
+ */
+internal fun turnsFromArray(arr: JSONArray): List<TurnRow> {
+    val out = ArrayList<TurnRow>(arr.length())
+    for (i in 0 until arr.length()) arr.optJSONObject(i)?.let { o ->
+        out.add(
+            TurnRow(
+                messageId = o.optLong("id"),
+                seq = o.optLong("seq"),
+                role = o.optString("role"),
+                agent = o.optString("agent"),
+                jobId = o.optString("job_id"),
+                text = o.optString("text"),
+                createdAt = o.optLong("created_at"),
+                model = o.optString("model"),
+                inputTokens = o.optInt("input_tokens"),
+                outputTokens = o.optInt("output_tokens"),
+                cacheRead = o.optInt("cache_read_tokens"),
+                cacheWrite = o.optInt("cache_write_tokens"),
+                reasoningTokens = o.optInt("reasoning_tokens"),
+                reasoningContent = o.optString("reasoning_content"),
+                inputIncludesCache = o.optInt("input_includes_cache") != 0,
+                durationMs = o.optLong("duration_ms"),
+                generationMs = o.optLong("generation_ms"),
+                block = o.optString("block"),
+            )
+        )
+    }
+    return out.sortedBy { it.seq }
+}
+
 internal fun pageTurns(rows: List<TurnRow>, beforeSeq: Long, limit: Int): List<TurnRow> {
     val before = if (beforeSeq <= 0L) rows else rows.filter { it.seq < beforeSeq }
     // Zero means "no page bound", which the incremental tail read uses: it
@@ -785,6 +821,31 @@ class HistoryApi(
         }.getOrDefault(false)
     }
 
+    /**
+     * Takes back the newest question and everything it produced.
+     *
+     * The daemon decides what belonged to the exchange — the answer, the tool
+     * calls and their results — because only it knows how a turn was written.
+     * The rows that remain come back so the thread can be redrawn without a
+     * second round trip over the tunnel.
+     */
+    suspend fun undo(sessionId: String): List<TurnRow>? = withContext(Dispatchers.IO) {
+        val c = engineConfig()
+        val base = absoluteUrl(c.daemonUrl) ?: return@withContext null
+        runCatching {
+            val req = Request.Builder().url("$base/api/sessions/$sessionId/undo")
+                .header("Authorization", "Bearer " + c.token)
+                .header("Content-Type", "application/json")
+                .post(ByteArray(0).toRequestBody("application/json".toMediaType()))
+                .build()
+            client.newCall(req).execute().use { r ->
+                if (!r.isSuccessful) return@use null
+                val text = r.body?.string().orEmpty()
+                turnsFromArray(JSONObject(text).optJSONArray("turns") ?: JSONArray())
+            }
+        }.getOrNull()
+    }
+
     /** Newest page for a session; the app calls this on open and on reconnect. */
     suspend fun latest(sessionId: String, limit: Int = 200): List<TurnRow> = turns(sessionId, 0, limit)
     suspend fun turnsAfter(sessionId: String, afterSeq: Long, limit: Int = 200): List<TurnRow> {
@@ -834,31 +895,8 @@ class HistoryApi(
                     val text = r.body?.string().orEmpty()
                     val env = runCatching { JSONObject(text) }.getOrNull() ?: return@use null
                     val arr = env.optJSONArray("turns") ?: return@use null
-                    val out = ArrayList<TurnRow>()
-                    for (i in 0 until arr.length()) arr.optJSONObject(i)?.let { o ->
-                        out.add(TurnRow(
-                            messageId = o.optLong("id"),
-                            seq = o.optLong("seq"),
-                            role = o.optString("role"),
-                            agent = o.optString("agent"),
-                            jobId = o.optString("job_id"),
-                            text = o.optString("text"),
-                            createdAt = o.optLong("created_at"),
-                            model = o.optString("model"),
-                            inputTokens = o.optInt("input_tokens"),
-                            outputTokens = o.optInt("output_tokens"),
-                            cacheRead = o.optInt("cache_read_tokens"),
-                            cacheWrite = o.optInt("cache_write_tokens"),
-                            reasoningTokens = o.optInt("reasoning_tokens"),
-                            reasoningContent = o.optString("reasoning_content"),
-                            inputIncludesCache = o.optInt("input_includes_cache") != 0,
-                            durationMs = o.optLong("duration_ms"),
-                            generationMs = o.optLong("generation_ms"),
-                            block = o.optString("block"),
-                        ))
-                    }
                     // oldest-first ordering
-                    out.sortedBy { it.seq }
+                    turnsFromArray(arr)
                 }
             }.getOrNull()
         }

@@ -16,6 +16,7 @@ import com.tulipskun.aixodia.data.model.StoredTotals
 import com.tulipskun.aixodia.data.model.ToolStep
 import com.tulipskun.aixodia.data.model.humanToolArgs
 import com.tulipskun.aixodia.data.remote.ConnState
+import com.tulipskun.aixodia.data.remote.TurnRow
 import com.tulipskun.aixodia.data.repo.CHAT_PAGE
 import com.tulipskun.aixodia.data.repo.ChatRepository
 import com.tulipskun.aixodia.data.repo.MessageWindow
@@ -1692,6 +1693,47 @@ class ChatViewModel(
                 errorCard.value = msg
                 notice.value = msg
             }
+        }
+    }
+
+    /**
+     * Takes back the newest question and everything it produced.
+     *
+     * What belonged to the exchange is the daemon's call: the answer, the tool
+     * calls, the results and any narration between them are all rows that only
+     * exist because of that question. The thread is replaced with the rows the
+     * daemon says are left, so the phone shows what the database holds instead
+     * of guessing which of its cached rows to hide.
+     */
+    fun undoLast() {
+        if (busy.value) {
+            notice.value = "Wait for the current answer before undoing"
+            return
+        }
+        if (conn.value != ConnState.ONLINE) {
+            notice.value = "Not connected to the daemon"
+            return
+        }
+        val sid = sessionId
+        if (sid.isBlank()) return
+        val owner = chatOwner()
+        viewModelScope.launch {
+            if (repo.isDraft(sid)) {
+                notice.value = "This chat has not started yet — there is nothing to undo"
+                return@launch
+            }
+            val left: List<TurnRow>? = runCatchingCancellable { repo.undoTurn(sid) }.getOrNull()
+            if (!owns(owner)) return@launch
+            if (left == null) {
+                notice.value = "Could not undo the last message"
+                return@launch
+            }
+            // The boundary is the seq the daemon kept highest. Everything above
+            // it was part of the exchange and is gone from D1 too, so the cache
+            // follows it down instead of keeping rows the daemon no longer has.
+            val boundary = left.maxOfOrNull { it.seq } ?: 0L
+            repo.dropTurnsAbove(sid, boundary)
+            notice.value = "Undid the last message"
         }
     }
 

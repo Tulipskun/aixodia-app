@@ -9,6 +9,7 @@ import com.tulipskun.aixodia.data.model.AttachmentRef
 import com.tulipskun.aixodia.data.model.Block
 import com.tulipskun.aixodia.data.model.ChatMessage
 import com.tulipskun.aixodia.data.remote.ConnState
+import com.tulipskun.aixodia.data.remote.TurnRow
 import com.tulipskun.aixodia.data.repo.CHAT_PAGE
 import com.tulipskun.aixodia.data.repo.ChatRepository
 import com.tulipskun.aixodia.data.repo.MessageWindow
@@ -268,6 +269,38 @@ class ChatViewModelDraftTest {
         accepted.completeExceptionally(IOException("offline"))
         runCurrent()
         assertEquals("typed meanwhile", vm.drafts.value["A"])
+    }
+
+    /**
+     * Undo takes the newest question back, so the cache has to follow D1 down:
+     * everything above the seq the daemon kept is gone from both.
+     */
+    @Test fun `undo drops the cached rows above the boundary`() = modelTest { vm ->
+        whenever(repo.undoTurn(any())).thenReturn(
+            listOf(TurnRow(messageId = 1, seq = 100, role = "user", text = "question"))
+        )
+        connection.value = ConnState.ONLINE
+        vm.undoLast()
+        runCurrent()
+        verify(repo).dropTurnsAbove("A", 100L)
+    }
+
+    /** A daemon that could not do it must not leave the phone showing rows it deleted. */
+    @Test fun `a failed undo leaves the cache alone`() = modelTest { vm ->
+        whenever(repo.undoTurn(any())).thenReturn(null)
+        connection.value = ConnState.ONLINE
+        vm.undoLast()
+        runCurrent()
+        verify(repo, never()).dropTurnsAbove(any(), any())
+    }
+
+    /** An answer in flight is not a moment to delete the question under it. */
+    @Test fun `undo waits while a turn is running`() = modelTest { vm ->
+        connection.value = ConnState.ONLINE
+        vm.busy.value = true
+        vm.undoLast()
+        runCurrent()
+        verify(repo, never()).undoTurn(any())
     }
 
     @Test fun `drafts restore from the saved-state handle`() = modelTest(
