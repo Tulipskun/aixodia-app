@@ -361,10 +361,8 @@ class ChatViewModel(
 
     /** Draft text belongs to a chat and survives rotation/process restoration. */
     val drafts: StateFlow<Map<String, String>> = savedStateHandle.getStateFlow("chat_drafts", emptyMap())
-    private val draftRevisions = mutableMapOf<String, Long>()
 
     fun changeDraft(text: String, sid: String = sessionId) {
-        draftRevisions[sid] = (draftRevisions[sid] ?: 0L) + 1L
         val next = HashMap(drafts.value)
         if (text.isEmpty()) next.remove(sid) else next[sid] = text
         savedStateHandle["chat_drafts"] = next
@@ -372,12 +370,46 @@ class ChatViewModel(
 
     fun sendDraft() {
         val sid = sessionId
-        val revision = draftRevisions[sid] ?: 0L
-        send(drafts.value[sid].orEmpty()) {
-            // Acceptance may arrive after switching chats or after further edits.
-            // Clear only the exact draft that was submitted, never its successor.
-            if ((draftRevisions[sid] ?: 0L) == revision) changeDraft("", sid)
-        }
+        val sent = drafts.value[sid].orEmpty()
+        if (!canSend(sent, sid)) return
+        // The box empties on the tap, not when the daemon answers. Accepting a
+        // message means a session lookup, a POST over the tunnel and the ack
+        // coming back — seconds on a phone, during which the words sat in the
+        // box and looked like nothing had happened. The turn is shown as soon
+        // as it starts, so the text leaving the box at the same moment is what
+        // makes the send feel like a send.
+        changeDraft("", sid)
+        send(sent)
+    }
+
+    /**
+     * Whether the box may be emptied for this text.
+     *
+     * The same refusals `send` makes, asked before the draft is cleared: a
+     * message that will not be sent has to stay in the box, or the tap silently
+     * loses it.
+     */
+    private fun canSend(text: String, sid: String): Boolean {
+        if (text.isBlank() && pendingAttachments.value.isEmpty()) return false
+        if (sid.isBlank()) return false
+        if (uploading.value) return false
+        // Attachments need the daemon: they are uploaded before the run starts,
+        // so off-line they cannot go at all and the box keeps its text.
+        if (conn.value != ConnState.ONLINE && pendingAttachments.value.isNotEmpty()) return false
+        if (conn.value == ConnState.ONLINE && busy.value) return false
+        return true
+    }
+
+    /**
+     * Puts a message back in the box after the daemon refused it.
+     *
+     * Only called on failure, and only when the box is still empty: text the
+     * user has typed since then is theirs, and replacing it would lose work.
+     */
+    private fun restoreDraft(text: String, sid: String) {
+        if (text.isBlank()) return
+        if (drafts.value[sid].orEmpty().isNotEmpty()) return
+        changeDraft(text, sid)
     }
 
     /**
@@ -1579,7 +1611,7 @@ class ChatViewModel(
         return turnOwner()
     }
 
-    fun send(text: String, onAccepted: () -> Unit = {}) {
+    fun send(text: String) {
         val chat = chatOwner()
         val attachments = pendingAttachments.value
         if (text.isBlank() && attachments.isEmpty()) return
@@ -1636,7 +1668,7 @@ class ChatViewModel(
                 currentCoroutineContext().ensureActive()
                 // False means an identical message was already queued; in
                 // either case the repository owns a durable copy of the text.
-                onAccepted()
+                // The draft is already gone: it was cleared at the tap.
                 if (!owns(owner)) return@launch
                 pendingAttachments.value = pendingAttachments.value.filterNot { it in attachments }
                 if (!online) {
@@ -1646,10 +1678,16 @@ class ChatViewModel(
                 }
             } catch (err: CancellationException) {
                 if (online && owns(owner)) clearLiveTurn()
+                // The box was emptied at the tap; a cancelled send has to give
+                // the words back, the same as a refused one.
+                restoreDraft(text, chat.sid)
                 throw err
             } catch (err: Exception) {
                 if (!owns(owner)) return@launch
                 if (online) clearLiveTurn()
+                // The box was emptied at the tap, so a refused send has to give
+                // the words back or they are lost.
+                restoreDraft(text, chat.sid)
                 val msg = "Could not start this chat on the daemon. Check the connection and try again."
                 errorCard.value = msg
                 notice.value = msg

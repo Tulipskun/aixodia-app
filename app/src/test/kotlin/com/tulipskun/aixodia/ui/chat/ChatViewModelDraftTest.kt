@@ -228,6 +228,48 @@ class ChatViewModelDraftTest {
         verify(repo, never()).send(any(), any(), any())
     }
 
+    /**
+     * The box empties on the tap. Sending is a session lookup, a POST over the
+     * tunnel and an ack coming back — seconds on a phone — and the words sat in
+     * the box the whole time, which read as the send not having happened.
+     */
+    @Test fun `the box empties on the tap, before the daemon answers`() = modelTest { vm ->
+        val accepted = CompletableDeferred<Boolean>()
+        whenever(repo.send(eq("A"), any(), any())).doSuspendableAnswer { accepted.await() }
+        connection.value = ConnState.ONLINE
+        vm.changeDraft("hello")
+        vm.sendDraft()
+        // The daemon has not answered yet, and the box is already empty.
+        assertEquals(emptyMap<String, String>(), vm.drafts.value)
+        accepted.complete(true)
+        runCurrent()
+        assertEquals(emptyMap<String, String>(), vm.drafts.value)
+    }
+
+    /** A send the daemon never accepted cannot cost the user their words. */
+    @Test fun `a refused send puts the words back`() = modelTest { vm ->
+        whenever(repo.send(eq("A"), any(), any())).doSuspendableAnswer { throw IOException("offline") }
+        connection.value = ConnState.ONLINE
+        vm.changeDraft("keep me")
+        vm.sendDraft()
+        runCurrent()
+        assertEquals("keep me", vm.drafts.value["A"])
+    }
+
+    /** Text typed while the send was in flight belongs to the user, not to us. */
+    @Test fun `a refusal never overwrites a newer draft`() = modelTest { vm ->
+        val accepted = CompletableDeferred<Boolean>()
+        whenever(repo.send(eq("A"), any(), any())).doSuspendableAnswer { accepted.await() }
+        connection.value = ConnState.ONLINE
+        vm.changeDraft("first")
+        vm.sendDraft()
+        runCurrent()
+        vm.changeDraft("typed meanwhile")
+        accepted.completeExceptionally(IOException("offline"))
+        runCurrent()
+        assertEquals("typed meanwhile", vm.drafts.value["A"])
+    }
+
     @Test fun `drafts restore from the saved-state handle`() = modelTest(
         savedState = SavedStateHandle(mapOf("chat_drafts" to hashMapOf("A" to "A draft", "B" to "B draft"))),
     ) { vm ->
