@@ -185,6 +185,10 @@ class TerminalView @JvmOverloads constructor(
     private var downTime = 0L
     private var dragging = false
     private var wheelAccum = 0f
+    // Set while a flick is still handing the program wheel notches; the drag that
+    // began it has ended, so the notches come from the scroller's own physics.
+    private var wheelFlinging = false
+    private var wheelFlingLast = 0
     // What the IME has composed and not committed, exactly as the shell's line
     // holds it. An update rewrites the end of it, and the only way to rewrite a
     // line that is not ours is to take back the characters it no longer has.
@@ -1188,6 +1192,7 @@ class TerminalView @JvmOverloads constructor(
                 // the command field loses the IME and the keyboard falls shut
                 // under the finger that only meant to click or look.
                 scroller.forceFinished(true)
+                wheelFlinging = false
                 lastTouchY = event.y
                 downY = event.y
                 downX = event.x
@@ -1278,6 +1283,7 @@ class TerminalView @JvmOverloads constructor(
                 removeCallbacks(longPress)
                 velocityTracker.addMovement(event)
                 if (verticalDrag && !wheelMode) releaseFling()
+                if (verticalDrag && wheelMode) releaseWheelFling()
                 endDragAxis()
                 if (selecting) {
                     // The finger has left the screen; the selection stays put
@@ -1347,36 +1353,69 @@ class TerminalView @JvmOverloads constructor(
 
     /** Hands accumulated vertical motion to the program as wheel notches. */
     private fun dispatchWheel(em: TerminalEmulator, event: MotionEvent) {
-        val step = (cellHeight * 2f).coerceAtLeast(1f)
-        val col = (event.x / cellWidth).toInt().coerceIn(0, em.columns - 1)
-        val row = (event.y / cellHeight).toInt().coerceIn(0, em.rows - 1)
-        // Dragging up (dy > 0) means "show me later content", which is wheel
-        // down; dragging down is wheel up.
-        while (wheelAccum >= step) {
-            sendWheel(em, 65, col, row)
-            wheelAccum -= step
-        }
-        while (wheelAccum <= -step) {
-            sendWheel(em, 64, col, row)
-            wheelAccum += step
-        }
+        dispatchWheelAt(em, wheelCol(event.x), wheelRow(event.y))
     }
 
-    private fun sendWheel(em: TerminalEmulator, button: Int, col: Int, row: Int) {
-        if (em.mouseReporting()) {
-            em.mouseReport(button, col, row, release = false)?.let { inputSink?.invoke(it) }
-        } else if (em.alternateScreen) {
-            // No mouse mode but a full-screen program: the terminal convention
-            // is that the wheel arrives as an arrow key.
-            val bytes = if (button == 65) "\u001b[B" else "\u001b[A"
-            inputSink?.invoke(bytes.toByteArray(Charsets.US_ASCII))
+    /**
+     * One notch per row the finger covers, sent as one message.
+     *
+     * Two rows bought a notch felt like dragging through treacle in a pager,
+     * and the notch is the unit a program actually understands — sending fewer
+     * of them is the only thing that makes a full-screen program feel slow.
+     *
+     * The notches a single frame produces leave together on purpose. Each one
+     * used to be its own WebSocket message and its own write into the pty, so
+     * the program was woken once per notch and answered once per notch, and the
+     * reader waited a full round trip for every line of movement. Batched, the
+     * program reads the whole move at once and repaints once.
+     */
+    private fun dispatchWheelAt(em: TerminalEmulator, col: Int, row: Int) {
+        val step = cellHeight.coerceAtLeast(1f)
+        // Dragging up (dy > 0) means "show me later content", which is wheel
+        // down; dragging down is wheel up. Truncation towards zero keeps the
+        // fraction that is not a notch yet.
+        val notches = (wheelAccum / step).toInt()
+        if (notches == 0) return
+        wheelAccum -= notches * step
+        val button = if (notches > 0) 65 else 64
+        val repeated = kotlin.math.abs(notches)
+        val bytes = wheelBytes(em, button, col, row) ?: return
+        val many = ByteArray(bytes.size * repeated)
+        for (i in 0 until repeated) {
+            bytes.copyInto(many, i * bytes.size)
         }
-        // A plain prompt with no history above it yet is the third case, and it
-        // gets no bytes at all. The drag used to be sent as a wheel report for a
-        // multiplexer to page, which made the pane's history a mode a keystroke
-        // could get stuck in and put tmux's own redraw clock between the finger
-        // and the screen. The engine hands that history over when the client
-        // attaches, so the reader who has any is already panning it locally.
+        inputSink?.invoke(many)
+    }
+
+    private fun wheelCol(x: Float = downX): Int {
+        val em = emulator ?: return 0
+        return (x / cellWidth).toInt().coerceIn(0, em.columns - 1)
+    }
+
+    private fun wheelRow(y: Float = lastTouchY): Int {
+        val em = emulator ?: return 0
+        return (y / cellHeight).toInt().coerceIn(0, em.rows - 1)
+    }
+
+    /**
+     * What one wheel notch looks like to this program, or nothing at all.
+     *
+     * Nothing is the honest answer for a plain prompt with no history above it:
+     * a drag used to be sent as a wheel report for a multiplexer to page, which
+     * made the pane's history a mode a keystroke could get stuck in.
+     */
+    private fun wheelBytes(em: TerminalEmulator, button: Int, col: Int, row: Int): ByteArray? {
+        if (em.mouseReporting()) return em.mouseReport(button, col, row, release = false)
+        // No mouse mode but a full-screen program: the terminal convention is
+        // that the wheel arrives as an arrow key.
+        if (em.alternateScreen) {
+            return if (button == 65) {
+                "\u001b[B".toByteArray(Charsets.US_ASCII)
+            } else {
+                "\u001b[A".toByteArray(Charsets.US_ASCII)
+            }
+        }
+        return null
     }
 
     private fun sendMouse(em: TerminalEmulator, event: MotionEvent, button: Int, release: Boolean) {
@@ -1387,7 +1426,41 @@ class TerminalView @JvmOverloads constructor(
         report?.let { inputSink?.invoke(it) }
     }
 
+    /**
+     * Keeps sending wheel notches after the finger leaves, at the pace it left.
+     *
+     * Without this a drag was the only way to move a full-screen program: the
+     * notches stopped the instant the finger lifted, so a flick that would have
+     * paged a screenful in a local page moved it a few lines instead. The
+     * scroller is the same physics the page uses, so the notches decelerate the
+     * way the finger would have.
+     */
+    private fun releaseWheelFling() {
+        velocityTracker.computeCurrentVelocity(1000)
+        val vy = velocityTracker.yVelocity
+        if (kotlin.math.abs(vy) < minFlingVelocity) return
+        // The accumulator runs opposite to the scroller's axis: a flick downwards
+        // is negative y and pulls earlier content into view, exactly as the drag
+        // that started it did.
+        scroller.fling(0, 0, 0, vy.toInt(), 0, 0, Int.MIN_VALUE / 2, Int.MAX_VALUE / 2)
+        wheelFlinging = true
+        wheelFlingLast = 0
+        postInvalidateOnAnimation()
+    }
+
     override fun computeScroll() {
+        if (wheelFlinging) {
+            val em = emulator
+            if (em == null || !scroller.computeScrollOffset()) {
+                wheelFlinging = false
+                return
+            }
+            wheelAccum -= (scroller.currY - wheelFlingLast).toFloat()
+            wheelFlingLast = scroller.currY
+            dispatchWheelAt(em, wheelCol(), wheelRow())
+            postInvalidateOnAnimation()
+            return
+        }
         if (scroller.computeScrollOffset()) {
             scrollTopPx = scroller.currY.toFloat()
             clampScroll()
