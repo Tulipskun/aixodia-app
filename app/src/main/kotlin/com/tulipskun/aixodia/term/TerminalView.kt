@@ -62,6 +62,15 @@ private const val HANDLE_START = 1
 private const val HANDLE_END = 2
 
 /**
+ * How much of the platform's maximum fling speed a flick must reach before it
+ * turns a page instead of streaming arrow keys. A full-screen program repaints
+ * once per message it reads, so the arrow fling costs a tunnel round trip per
+ * frame; a flick this fast is a deliberate page turn, and one PgUp/PgDn buys a
+ * whole screenful in a single round trip. Gentler flicks keep the arrow fling.
+ */
+private const val PAGE_FLING_FRACTION = 0.6f
+
+/**
  * Draws a [TerminalEmulator] and turns fingers and keys into bytes. Everything
  * here is the app's own: the grid is painted with a [Paint], the keyboard is a
  * plain [InputConnection], and a tap becomes a mouse click only when the
@@ -203,6 +212,7 @@ class TerminalView @JvmOverloads constructor(
 
     private val touchSlop = android.view.ViewConfiguration.get(context).scaledTouchSlop
     private val minFlingVelocity = android.view.ViewConfiguration.get(context).scaledMinimumFlingVelocity
+    private val maxFlingVelocity = android.view.ViewConfiguration.get(context).scaledMaximumFlingVelocity
 
     // Text selection: a long press selects a word and raises a floating action
     // bar with Copy. Both ends stay where the word starts and ends; the two
@@ -1436,9 +1446,21 @@ class TerminalView @JvmOverloads constructor(
      * way the finger would have.
      */
     private fun releaseWheelFling() {
+        val em = emulator ?: return
         velocityTracker.computeCurrentVelocity(1000)
         val vy = velocityTracker.yVelocity
         if (kotlin.math.abs(vy) < minFlingVelocity) return
+        // A strong flick at a full-screen program that takes the wheel as arrows
+        // is a page turn: one PgUp/PgDn repaints a whole screenful in a single
+        // round trip, where the arrow fling below would cost one per frame. A
+        // flick downwards (vy > 0) pulls earlier content into view, so it pages up.
+        if (em.alternateScreen && !em.mouseReporting() &&
+            kotlin.math.abs(vy) >= maxFlingVelocity * PAGE_FLING_FRACTION
+        ) {
+            wheelAccum = 0f
+            if (vy > 0) pageUp() else pageDown()
+            return
+        }
         // The accumulator runs opposite to the scroller's axis: a flick downwards
         // is negative y and pulls earlier content into view, exactly as the drag
         // that started it did.
