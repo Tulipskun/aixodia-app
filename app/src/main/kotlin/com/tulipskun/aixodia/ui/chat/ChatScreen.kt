@@ -1120,7 +1120,6 @@ private fun ChatModelSheet(
     onDismiss: () -> Unit,
 ) {
     var providerMenu by remember { mutableStateOf(false) }
-    var modelMenu by remember { mutableStateOf(false) }
     var modelQuery by rememberSaveable { mutableStateOf("") }
     val provider = providers.firstOrNull { it.id == pickedProvider }
     val models = provider?.models.orEmpty()
@@ -1137,9 +1136,21 @@ private fun ChatModelSheet(
     // chat, and a dialog in the middle of the screen reads as one — the sheet
     // had to be dragged up from the edge for what is a single choice, not a
     // list of actions.
-    Dialog(onDismissRequest = onDismiss) {
+    // decorFitsSystemWindows=false lets the dialog see the IME inset and sit
+    // above the keyboard; the platform-width cap is off so the width clamp
+    // below is the only width rule. Without this the Save/Clear buttons sat
+    // under the keyboard whenever the search field had focus.
+    Dialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(
+            usePlatformDefaultWidth = false,
+            decorFitsSystemWindows = false,
+        ),
+    ) {
         Column(
             Modifier
+                .windowInsetsPadding(WindowInsets.ime.union(WindowInsets.navigationBars))
+                .padding(horizontal = 24.dp, vertical = 16.dp)
                 .widthIn(min = 320.dp, max = 360.dp)
                 .heightIn(max = 560.dp)
                 .shadow(8.dp, MaterialTheme.shapes.extraLarge)
@@ -1202,52 +1213,59 @@ private fun ChatModelSheet(
                 )
             }
             // The model is the picked provider's catalogue, so it is already
-            // filtered by provider; typing narrows it further. A drop-down
-            // rather than a visible list keeps the dialog from scrolling.
-            ExposedDropdownMenuBox(
-                expanded = modelMenu,
-                onExpandedChange = { modelMenu = it },
+            // filtered by provider; typing narrows it further.
+            // The catalogue is hundreds of models long. As an exposed dropdown
+            // it opened a popup taller than the screen that covered the search
+            // field itself and every button under it — nothing could be typed
+            // or tapped. The list lives inside the dialog instead: a bounded,
+            // scrollable column under the search field, so the field, the list
+            // and the buttons each keep their own space.
+            OutlinedTextField(
+                value = modelQuery,
+                onValueChange = { modelQuery = it },
+                singleLine = true,
+                label = { Text(stringResource(R.string.model_count, models.size)) },
+                placeholder = { Text("Type to search") },
+                modifier = Modifier.fillMaxWidth(),
+            )
+            LazyColumn(
+                Modifier
+                    .fillMaxWidth()
+                    .heightIn(max = 240.dp),
             ) {
-                OutlinedTextField(
-                    value = if (modelMenu) modelQuery else pickedModel,
-                    onValueChange = { modelQuery = it; modelMenu = true },
-                    singleLine = true,
-                    label = { Text(stringResource(R.string.model_count, models.size)) },
-                    placeholder = {
-                        Text(if (modelMenu) "Type to search" else "Select a model")
-                    },
-                    trailingIcon = {
-                        ExposedDropdownMenuDefaults.TrailingIcon(expanded = modelMenu)
-                    },
-                    modifier = Modifier.menuAnchor().fillMaxWidth(),
-                )
-                ExposedDropdownMenu(
-                    expanded = modelMenu,
-                    onDismissRequest = { modelMenu = false },
-                ) {
-                    if (filtered.isEmpty()) {
-                        DropdownMenuItem(
-                            text = { Text(stringResource(R.string.no_matching_model)) },
-                            onClick = {},
-                            enabled = false,
+                if (filtered.isEmpty()) {
+                    item {
+                        Text(
+                            stringResource(R.string.no_matching_model),
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(vertical = 8.dp),
                         )
-                    } else {
-                        filtered.forEach { m ->
-                            DropdownMenuItem(
-                                text = {
-                                    Text(
-                                        m.id,
-                                        fontWeight = if (m.id == pickedModel || m.id == working) {
-                                            FontWeight.SemiBold
-                                        } else {
-                                            FontWeight.Normal
-                                        },
-                                    )
-                                },
-                                onClick = {
+                    }
+                } else {
+                    items(filtered, key = { it.id }) { m ->
+                        val chosen = m.id == pickedModel
+                        Row(
+                            Modifier
+                                .fillMaxWidth()
+                                .clip(MaterialTheme.shapes.small)
+                                .background(
+                                    if (chosen) MaterialTheme.colorScheme.secondaryContainer
+                                    else Color.Transparent,
+                                )
+                                .clickable {
                                     onModel(m.id)
                                     modelQuery = ""
-                                    modelMenu = false
+                                }
+                                .padding(horizontal = 10.dp, vertical = 10.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Text(
+                                m.id,
+                                fontWeight = if (chosen || m.id == working) {
+                                    FontWeight.SemiBold
+                                } else {
+                                    FontWeight.Normal
                                 },
                             )
                         }
