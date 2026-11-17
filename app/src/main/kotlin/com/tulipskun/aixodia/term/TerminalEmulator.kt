@@ -232,6 +232,10 @@ class TerminalEmulator(
             }
         }
         val target = row()
+        // A real glyph landing on the page means the shell has painted at the
+        // clamped cursor after a resize — the rows remembered as "above the
+        // top" are stale and must not be hauled back on the next grow.
+        buffer.noteWritten()
         target.setChar(buffer.cursorCol, cp, w, fg, bg, attr)
         lastPrinted = cp
         buffer.cursorCol += w

@@ -199,6 +199,24 @@ class TerminalBuffer(var columns: Int, var rows: Int, private val scrollbackLimi
      * the content put it instead of that many rows further down.
      */
     private var cursorAboveTop = 0
+
+    /**
+     * Rows the last shrink pushed into history and the shell has not repainted
+     * over yet. When it does repaint (SIGWINCH on keyboard open), those rows
+     * have a fresh copy on the short page; keeping both would show the prompt
+     * twice after the keyboard closes. [noteWritten] drops the stale copies.
+     */
+    private var pushedRows = 0
+
+    /** The shell painted a cell on the short page: its pushed rows are stale. */
+    fun noteWritten() {
+        if (pushedRows == 0) return
+        repeat(pushedRows) {
+            if (scrollback.isNotEmpty()) scrollback.removeAt(scrollback.lastIndex)
+        }
+        pushedRows = 0
+        cursorAboveTop = 0
+    }
     var scrollTop = 0
     var scrollBottom = rows - 1
 
@@ -242,6 +260,8 @@ class TerminalBuffer(var columns: Int, var rows: Int, private val scrollbackLimi
         scrollback.clear()
         cursorCol = 0
         cursorRow = 0
+        cursorAboveTop = 0
+        pushedRows = 0
         scrollTop = 0
         scrollBottom = rows - 1
     }
@@ -376,7 +396,11 @@ class TerminalBuffer(var columns: Int, var rows: Int, private val scrollbackLimi
                 scrollback.add(lines.removeAt(0))
                 trimScrollback()
                 shifted--
+                pushedRows++
             }
+            // Rows handed back on a grow have been accounted for: a later
+            // repaint must not drop them from history a second time.
+            if (shifted > 0) pushedRows = 0
         } else {
             while (lines.size < newRows) lines.add(blankRow())
             while (lines.size > newRows) lines.removeAt(lines.lastIndex)
