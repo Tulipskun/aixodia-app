@@ -464,17 +464,60 @@ class TerminalEmulatorTest {
         // down the page is what puts a second prompt halfway down the screen.
         assertEquals("cursor must be back on the prompt line", 0, em.buffer.cursorRow)
     }
+
+    /**
+     * The real keyboard case has output between the two resizes: SIGWINCH makes
+     * the shell repaint its prompt on the short page. When the keyboard closes,
+     * the old prompt must not be pulled back out of the scrollback next to the
+     * new one. This is the gap the plain round-trip test above leaves open.
+     */
     @Test
-    fun debug_resize_roundtrip() {
-        val out = RecordingOutput()
-        val em = TerminalEmulator(40, 12, out)
-        em.write("\u001bc".toByteArray())
-        em.write("root@host:~# ".toByteArray())
-        println("DBG before: rows=${em.rows} lines=${em.buffer.lines.size} sb=${em.buffer.scrollback.size} row0=${em.buffer.lines[0].text()}")
+    fun aShellRepaintBetweenShrinkAndGrowLeavesOnePrompt() {
+        val (em, _) = emulator(cols = 40, rows = 12)
+        em.send("\u001bc")
+        em.send("root@host:~# ")
+
+        // Keyboard opens: the page shortens and the prompt row moves to history.
         em.resize(40, 8)
-        println("DBG shrink: rows=${em.rows} lines=${em.buffer.lines.size} sb=${em.buffer.scrollback.size}")
+        // The shell got SIGWINCH and repainted its prompt on the short page.
+        em.send("root@host:~# ")
+        // Keyboard closes: the page grows again.
         em.resize(40, 12)
-        println("DBG grow:   rows=${em.rows} lines=${em.buffer.lines.size} sb=${em.buffer.scrollback.size} row0=${em.buffer.lines[0].text()}")
+
+        val allRows = em.buffer.scrollback.map { it.text() } + em.buffer.lines.map { it.text() }
+        assertEquals(
+            "one prompt across the whole page, not an old copy next to a new one: $allRows",
+            1,
+            allRows.count { it == "root@host:~#" },
+        )
+        assertEquals("no history should have accumulated", 0, em.buffer.scrollback.size)
     }
 
+    /**
+     * The coloured prompt in the screenshot loses its colour because the row
+     * that survives the round-trip is the stale one, not the freshly repainted
+     * one. The surviving prompt must keep the colour the shell painted it with.
+     */
+    @Test
+    fun sgrColourSurvivesKeyboardRoundTrip() {
+        val (em, _) = emulator(cols = 40, rows = 12)
+        em.send("\u001bc")
+        em.send("\u001b[32m/root >\u001b[0m ")
+
+        em.resize(40, 8)
+        em.send("\u001b[32m/root >\u001b[0m ")
+        em.resize(40, 12)
+
+        val prompts = em.buffer.lines.filter { it.text() == "/root >" }
+        assertEquals("exactly one prompt", 1, prompts.size)
+        val green = em.buffer.lines[0].chars.indices
+            .filter { em.buffer.lines[0].chars[it] != 0 && em.buffer.lines[0].chars[it] != 32 }
+            .map { em.buffer.lines[0].fg[it] }
+            .toSet()
+        assertEquals(
+            "the prompt keeps its green SGR colour",
+            setOf(TerminalColors.indexed(2)),
+            green,
+        )
+    }
 }
