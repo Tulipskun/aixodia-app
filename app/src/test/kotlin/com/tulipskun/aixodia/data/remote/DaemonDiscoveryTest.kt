@@ -108,6 +108,47 @@ class DaemonDiscoveryTest {
     }
 
     @Test
+    fun `another engine's announcement does not move this phone off the one it is on`() {
+        // Every engine announces its own address on its own socket, and one
+        // hostname serves them all: the name in the path is the only thing that
+        // says whose announcement this is.
+        val action = DaemonDiscovery.decide(
+            currentUrl = "https://engine.aixodia.dpdns.org/work-1",
+            node = node("https://engine.aixodia.dpdns.org/m-8a7d1192", online = true),
+        )
+        assertEquals(Discovery.Wait, action)
+    }
+
+    @Test
+    fun `the engine this phone is on may still move its own address`() {
+        val action = DaemonDiscovery.decide(
+            currentUrl = "https://engine.aixodia.dpdns.org/work-1",
+            node = node("https://work.example.net/work-1", online = true),
+        )
+        assertEquals(Discovery.Adopt("https://work.example.net/work-1"), action)
+    }
+
+    @Test
+    fun `a bare host is the first engine and keeps its own announcements`() {
+        assertEquals(
+            Discovery.Keep,
+            DaemonDiscovery.decide(
+                currentUrl = "https://engine.aixodia.dpdns.org",
+                node = node("https://engine.aixodia.dpdns.org/", online = true),
+            ),
+        )
+        // The bare host and a named engine are not the same engine, so a named
+        // announcement cannot rewrite the address this phone was given.
+        assertEquals(
+            Discovery.Wait,
+            DaemonDiscovery.decide(
+                currentUrl = "https://engine.aixodia.dpdns.org",
+                node = node("https://engine.aixodia.dpdns.org/m-8a7d1192", online = true),
+            ),
+        )
+    }
+
+    @Test
     fun `a configured endpoint this phone cannot reach is not a connection`() {
         // The chain the settings screen reads: decide() says the row's address
         // is the one in use — that is all the row can ever say — and the

@@ -81,6 +81,12 @@ class SettingsStore(private val ctx: Context) {
     // The tunnel that produced providers_cache. A new engine (or a different
     // account behind the same app) must not inherit the old provider list.
     private val providersCacheUrl = stringPreferencesKey("providers_cache_url")
+    // The engines the gateway last listed, the one the user picked, and when that
+    // list was read. Kept so a phone that opens without a network still has a
+    // switcher, and so the pick survives a restart.
+    private val enginesJson = stringPreferencesKey("engines_json")
+    private val activeEngineId = stringPreferencesKey("active_engine_id")
+    private val enginesFetchedAt = stringPreferencesKey("engines_fetched_at")
 
     /** The footer format for a provider, falling back to the shared default. */
     fun tokenFieldsFlow(provider: String) = ctx.ds.data.map { prefs ->
@@ -123,6 +129,50 @@ class SettingsStore(private val ctx: Context) {
         ctx.ds.data.map { it[daemonStartedAt]?.toLongOrNull() ?: 0L }
     val daemonBootAtFlow: Flow<Long> =
         ctx.ds.data.map { it[daemonBootAt]?.toLongOrNull() ?: 0L }
+
+    /** The engine catalog as last read: JSON, selected id, and when it was read. */
+    data class EngineSnapshot(
+        val json: String,
+        val activeId: String,
+        val fetchedAt: Long,
+    )
+
+    val enginesJsonFlow: Flow<String> = ctx.ds.data.map { it[enginesJson].orEmpty() }
+    val activeEngineIdFlow: Flow<String> = ctx.ds.data.map { it[activeEngineId].orEmpty() }
+    val enginesFetchedAtFlow: Flow<Long> =
+        ctx.ds.data.map { it[enginesFetchedAt]?.toLongOrNull() ?: 0L }
+
+    suspend fun engineSnapshot(): EngineSnapshot {
+        val prefs = ctx.ds.data.first()
+        return EngineSnapshot(
+            json = prefs[enginesJson].orEmpty(),
+            activeId = prefs[activeEngineId].orEmpty(),
+            fetchedAt = prefs[enginesFetchedAt]?.toLongOrNull() ?: 0L,
+        )
+    }
+
+    /**
+     * Replaces the catalog the gateway answered. The selection is left alone
+     * unless it names an engine the list no longer has.
+     */
+    suspend fun saveEngines(json: String) {
+        val clean = json.trim()
+        if (clean.isEmpty()) return
+        ctx.ds.edit {
+            it[enginesJson] = clean
+            it[enginesFetchedAt] = (System.currentTimeMillis() / 1000).toString()
+        }
+    }
+
+    /** The address selection, written together with the address it names. */
+    suspend fun selectEngine(id: String, url: String) {
+        val cleanId = id.trim()
+        if (cleanId.isEmpty()) return
+        writeDaemon(url)
+        ctx.ds.edit { it[activeEngineId] = cleanId }
+    }
+
+    suspend fun currentEngineId(): String = activeEngineIdFlow.first()
 
     suspend fun current(): ConnConfig {
         val prefs = ctx.ds.data.first()
@@ -264,6 +314,10 @@ class SettingsStore(private val ctx: Context) {
      * live socket and the provider/model API the running router owns.
      */
     suspend fun saveDaemon(address: String) {
+        writeDaemon(address)
+    }
+
+    private suspend fun writeDaemon(address: String) {
         val clean = address.trim().trimEnd('/').ifBlank { DEFAULT_DAEMON_URL }
         ctx.ds.edit {
             if ((it[daemonUrl] ?: "").trim().trimEnd('/') != clean) {
@@ -277,18 +331,31 @@ class SettingsStore(private val ctx: Context) {
     }
 
     /**
-     * Resets a stored address that is not an engine back to the built-in one.
+     * Resets a stored address that is not an engine back to the selected engine.
      *
      * A phone that saved the dashboard host (an app built before the engine got
      * its own hostname) keeps dialling it forever: the host answers /healthz
      * with a page, so discovery had something to call healthy and never adopted
      * the default. Called only when the address failed to answer as an engine.
+     * The reset goes to the engine the user picked, never to the built-in one:
+     * that would silently move them off the machine they chose.
      */
     suspend fun healDaemon(): Boolean {
-        val stored = ctx.ds.data.first()[daemonUrl]?.trim()?.trimEnd('/').orEmpty()
-        if (stored == DEFAULT_DAEMON_URL.trimEnd('/')) return false
-        saveDaemon(DEFAULT_DAEMON_URL)
+        val prefs = ctx.ds.data.first()
+        val stored = prefs[daemonUrl]?.trim()?.trimEnd('/').orEmpty()
+        val wanted = EngineCatalog.selectedUrl(
+            prefs[enginesJson].orEmpty(),
+            prefs[activeEngineId].orEmpty(),
+        ) ?: DEFAULT_DAEMON_URL.trimEnd('/')
+        if (stored == wanted) return false
+        saveDaemon(wanted)
         return true
+    }
+
+    /** The engine the pick names, or the first one listed, or null. */
+    suspend fun selectedEngineUrl(): String? {
+        val prefs = ctx.ds.data.first()
+        return EngineCatalog.selectedUrl(prefs[enginesJson].orEmpty(), prefs[activeEngineId].orEmpty())
     }
 
     /** Switch session only — never touches connection settings. */

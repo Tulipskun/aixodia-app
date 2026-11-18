@@ -1,7 +1,8 @@
 # แอพสลับ engine — overview
 
-> สถานะ: **ยังไม่มีในแอพ** — เอกสารนี้อธิบายของที่มีอยู่จริงในโค้ดวันนี้ แล้วจึงบอกว่าต้องเพิ่มอะไร
-> ฝั่ง server พร้อมแล้ว (registry ใน D1 + ที่อยู่แบบ `…/<name>/…`)
+> สถานะ: **ข้อ 1–3 ทำแล้ว** (catalog, ตัวชี้เดียว, discovery ไม่แย่งสิทธิ์) — ยังไม่ทำ Room migration
+> (`engineId`) และ UI สวิตช์ · เอกสารนี้คงส่วนที่เหลือไว้ตามเดิม
+> ฝั่ง server พร้อมแล้ว: Worker เป็นเจ้าของ `engine.aixodia.dpdns.org` ทั้ง host และเสิร์ฟ registry
 
 ## 1. วันนี้แอพเลือก engine ได้แค่ตัวเดียว
 
@@ -117,7 +118,18 @@ tap row
   เครื่องที่ tunnel แยกของตัวเอง = เพิ่ม Access bypass 2 app (`…/<name>/api`, `…/<name>/healthz`)
   ตามที่ handoff เขียนไว้
 
-## 7. ลำดับงานที่แนะนำ (ถ้าจะลงมือ)
+## 7. สถานะงาน
+
+| # | งาน | สถานะ |
+|---|---|---|
+| 1 | catalog ใน `SettingsStore` + `EngineCatalog` | ✅ `EngineCatalog.kt`, key `engines_json`/`active_engine_id`/`engines_fetched_at` |
+| 2 | ตัวชี้เดียว (`saveDaemon`) + `EngineDirectory.select()` เขียน id+url พร้อมกัน | ✅ `EngineDirectory.kt` |
+| 3 | discovery ไม่แย่งสิทธิ์ (เทียบ engine id ใน path) | ✅ `DaemonDiscovery.decide()` |
+| 4 | Room migration `engineId` | ค้าง |
+| 5 | UI bottom sheet | ค้าง |
+| 6 | terminal/`sessionId` เป็น map ต่อ engine | ค้าง (ไม่บล็อกการสลับ) |
+
+## 8. ลำดับงานที่เหลือ
 
 1. `SettingsStore`: 3 key + `EngineCatalog` (parse/serialize + unit test)
 2. `EngineDirectory`: fetch `/api/engines`, เก็บ catalog, จัดการ active id (unit test เรื่อง fetch fail)

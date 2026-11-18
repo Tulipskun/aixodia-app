@@ -5,12 +5,14 @@ import com.tulipskun.aixodia.data.local.AppDatabase
 import com.tulipskun.aixodia.data.remote.ChatTransport
 import com.tulipskun.aixodia.data.remote.ClientToken
 import com.tulipskun.aixodia.data.remote.DaemonDiscovery
+import com.tulipskun.aixodia.data.remote.EngineDirectory
 import com.tulipskun.aixodia.data.remote.HistoryApi
 import com.tulipskun.aixodia.data.remote.RunSocket
 import com.tulipskun.aixodia.data.repo.ChatRepository
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
 
 class AixodiaApp : Application() {
     lateinit var container: AppContainer
@@ -28,6 +30,10 @@ class AixodiaApp : Application() {
         // running. The default Named Tunnel URL is already configured locally;
         // discovery never reads Cloudflare KV or requires a Cloudflare token.
         container.discovery.start()
+        // The engine list the phone switched with last time is on disk; this
+        // reads the current one in the background, so the switcher is fresh by
+        // the first time it is opened and still works when it is not.
+        container.refreshEngines()
     }
 }
 
@@ -47,5 +53,10 @@ class AppContainer(app: Application) {
     val chat: ChatTransport = RunSocket(settings, historyApi, app, clientToken)
     val repo = ChatRepository(db, historyApi, chat)
     val discovery = DaemonDiscovery(settings, historyApi, chat, scope)
+    val engines = EngineDirectory(settings)
 
+    /** Reads the gateway's engine list without holding up the first screen. */
+    fun refreshEngines() {
+        scope.launch { engines.refresh() }
+    }
 }

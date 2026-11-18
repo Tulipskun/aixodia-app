@@ -1,6 +1,7 @@
 package com.tulipskun.aixodia.data.remote
 
 import android.util.Log
+import com.tulipskun.aixodia.EngineCatalog
 import com.tulipskun.aixodia.SettingsStore
 import com.tulipskun.aixodia.data.model.AiOutput
 import kotlinx.coroutines.CoroutineScope
@@ -190,6 +191,14 @@ class DaemonDiscovery(
             // A missing endpoint must never erase a working address.
             if (node?.online != true) return Discovery.Wait
             if (normalise(url) == normalise(currentUrl)) return Discovery.Keep
+            // Only the engine this phone is on may move it. Every engine
+            // announces its own address on its own socket, so adopting whatever
+            // was heard last would drag the user back to the machine they just
+            // switched away from — and with one hostname serving all of them,
+            // the name in the path is what tells them apart.
+            if (EngineCatalog.engineIdOf(url) != EngineCatalog.engineIdOf(currentUrl)) {
+                return Discovery.Wait
+            }
             return Discovery.Adopt(url)
         }
 
