@@ -1,9 +1,12 @@
 # Auth System
 
-สถานะ: implement แล้ว (Worker `aixodia-auth`, engine sync, แอป `DeviceFlow.kt`)
-ขอบเขต: flow นี้ใช้กับทุกทางเข้า — แอปและเว็บคอนโซลออก token จากชุดเดียวกัน
-(token ที่เว็บได้จาก `/auth/token` หลัง Access ก็ผ่าน `activate` เข้า engine เหมือนกัน)
-flow PKCE เดิม (`/v1/auth/authorize|exchange`) กลายเป็น legacy ลบทิ้งเมื่อ flow นี้ขึ้นแทน
+สถานะ: implement แล้ว — ทางเดียวสำหรับทุก client
+ขอบเขต: Worker `aixodia-auth` เป็นผู้ออก token เพียงผู้เดียว ทุกทางเข้าใช้ตาราง
+`auth_tokens` เหมือนกัน: แอปผ่าน `/auth/device/*`, เว็บคอนโซลผ่าน `/auth/token`
+หลัง Access, และ CLI ผ่าน `aixodia auth login` (device flow เดียวกัน)
+flow PKCE เดิม (`/v1/auth/authorize|exchange`) ถูกลบออกจาก engine และแอปแล้ว
+`CF_TOKEN` เป็นความลับของ engine สำหรับ Cloudflare API + socket ภายในเท่านั้น
+client ไม่ถือและไม่ส่ง token ตัวนี้
 
 ## Flow
 
@@ -16,7 +19,8 @@ flow PKCE เดิม (`/v1/auth/authorize|exchange`) กลายเป็น 
 ## กฎ
 
 - Server (Worker) เป็นผู้ออก token เท่านั้น
-- Token สุ่ม 256 บิต **ไม่มีวันหมดอายุ** หมดได้เฉพาะ revoke
+- Token สุ่ม 256 บิต หมดได้ด้วย revoke; token ที่เว็บออกมี `expires_at`
+  เป็นเพียง refresh hint สำหรับแคชในหน่วยความจำ (ไม่มี column บังคับใน device flow)
 - อีเมลไม่ถูกส่งหรือใช้ใน login
 - Device code ใช้ได้ครั้งเดียว หมดใน 10 นาที
 - เก็บ token ใน D1 **แบบ hash (SHA-256)** — ค้นหาด้วย hash ต้นทุนเท่าเดิม
@@ -55,9 +59,16 @@ flow PKCE เดิม (`/v1/auth/authorize|exchange`) กลายเป็น 
 
 - ถ้าเขียน D1 ได้ สร้าง session ได้เอง คุม credential ของ Cloudflare ให้เข้มงวด
 - Token อยู่ในหน่วยความจำ engine ด้วย — dump หน่วยความจำ = token รั่ว
-- Token ไม่มีวันหมดอายุ — revoke คือกำแพงเดียว หน้า sessions ต้องหาใช้ง่าย
+- Device token ไม่มีวันหมดอายุ — revoke คือกำแพงเดียว หน้า sessions ต้องหาใช้ง่าย
 
 ## ที่เก็บในแอป
 
 - `EncryptedSharedPreferences` คีย์ใน Keystore
 - ไม่ backup, ไม่ log header
+
+## CLI
+
+- `aixodia auth login` ใช้ device flow เดียวกับแอป (พิมพ์โค้ด + เปิด browser)
+- เก็บ token ที่ `~/.aixodia/cli.token` โหมด 0600 (fallback แบบ gh เมื่อไม่มี
+  system credential store บน headless host)
+- `aixodia auth status|token|logout` — logout ส่ง `/auth/revoke` ด้วย token นั้น

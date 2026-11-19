@@ -132,18 +132,10 @@ fun ConnDot(c: ConnState) {
 /**
  * First-launch sign-in gate.
  *
- * One way in, following `auth_system.md`: type the address, get a token at once
- * in state `pending`, confirm it in a browser behind Cloudflare Access, and the
- * app polls until the engine reports it active.
- *
- * There used to be a second button here running the PKCE hand-off from
- * `AccessLogin`. It was dropped because it added nothing: both paths end at the
- * same Access login, and only this one checks the address against the engine's
- * allowlist. Two buttons for one outcome is a choice the user should not have to
- * make.
- *
- * `AccessLogin` itself stays because the `aixodia://auth/callback` deep link is
- * still handled in `MainActivity`; removing it is a separate change.
+ * One way in, following `auth_system.md`: the auth Worker mints a device code,
+ * the browser proves the account behind Cloudflare Access, and the app polls
+ * until the Worker hands over the token. There is no PKCE hand-off and no
+ * engine-issued session: the Worker is the only sign-in authority.
  */
 @Composable
 fun SetupNeeded(
