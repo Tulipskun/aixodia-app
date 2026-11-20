@@ -14,9 +14,12 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -29,6 +32,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.ContentCopy
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VisibilityOff
@@ -70,6 +74,7 @@ import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import com.tulipskun.aixodia.BuildConfig
 import com.tulipskun.aixodia.CrashLog
+import com.tulipskun.aixodia.EngineEntry
 import com.tulipskun.aixodia.SettingsStore
 import com.tulipskun.aixodia.R
 import com.tulipskun.aixodia.ui.display.TokenField
@@ -85,6 +90,7 @@ import com.tulipskun.aixodia.data.remote.ConnState
 import com.tulipskun.aixodia.data.remote.DaemonDiscovery
 import com.tulipskun.aixodia.data.remote.DiscoveryPhase
 import com.tulipskun.aixodia.data.remote.DiscoveryState
+import com.tulipskun.aixodia.data.remote.EngineDirectory
 import com.tulipskun.aixodia.data.remote.HistoryApi
 import com.tulipskun.aixodia.data.remote.NodeInfo
 import com.tulipskun.aixodia.update.UpdateManager
@@ -112,6 +118,7 @@ fun SettingsScreen(
     onOpenBackup: () -> Unit,
     onOpenFiles: () -> Unit = {},
     discovery: DaemonDiscovery? = null,
+    engines: EngineDirectory? = null,
 ) {
     val scope = rememberCoroutineScope()
     val curEndpoint by settings.endpointFlow.collectAsStateWithLifecycle(initialValue = "")
@@ -141,6 +148,18 @@ fun SettingsScreen(
     // exactly those and leaves the rest of the stored values where they are.
     var clearedMain by remember { mutableStateOf<List<String>>(emptyList()) }
     var showAgentDialog by remember { mutableStateOf(false) }
+    // The engine picker reads the gateway's catalog and shows it as a sheet.
+    // `snapshot` is state so a refresh or a switch can update the rows in place.
+    var showEngineSheet by remember { mutableStateOf(false) }
+    var engineSnapshot by remember {
+        mutableStateOf(EngineDirectory.Snapshot(emptyList(), "", 0L))
+    }
+    var engineMsg by remember { mutableStateOf("") }
+
+    // Load the stored catalog once so the picker is never empty on first open.
+    LaunchedEffect(engines) {
+        if (engines != null) engineSnapshot = engines.snapshot()
+    }
 
     // load reports whether the daemon answered. A failed read keeps the list it
     // already had and names the failure: a screen that empties itself and then
@@ -284,6 +303,23 @@ fun SettingsScreen(
                             },
                             enabled = !busy && address.isNotBlank(),
                         ) { Text("Save and test") }
+                    }
+                    // The engine picker: the same registry the console uses,
+                    // shown as a row that opens a bottom sheet of candidates.
+                    if (engines != null) {
+                        EnginePickerRow(
+                            snapshot = engineSnapshot,
+                            daemonUrl = curDaemon,
+                            onClick = {
+                                engineMsg = ""
+                                scope.launch { engineSnapshot = engines.refresh() }
+                                showEngineSheet = true
+                            },
+                        )
+                        if (engineMsg.isNotBlank()) {
+                            Text(engineMsg, style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.error)
+                        }
                     }
                     NodeCard(
                         history = history,
@@ -451,6 +487,35 @@ fun SettingsScreen(
                 mainGeneration = mg
                 showAgentDialog = false
             },
+        )
+    }
+
+    if (showEngineSheet && engines != null) {
+        EnginePickerSheet(
+            engines = engines,
+            snapshot = engineSnapshot,
+            onDismiss = { showEngineSheet = false },
+            onPicked = { entry, probe ->
+                showEngineSheet = false
+                scope.launch {
+                    // Both the id and the address are written in one DataStore
+                    // edit by selectEngine, so no reader sees them disagree.
+                    val chosen = engines.select(entry.id) ?: entry
+                    // select() writes id+url; the probe already checked health,
+                    // and the returned version is shown for feedback only.
+                    address = chosen.url
+                    msg = "Using ${chosen.name}${probe.version.takeIf { it.isNotBlank() }?.let { " ($it)" } ?: ""}"
+                    msgIsError = false
+                    engineMsg = ""
+                    engineSnapshot = engines.snapshot()
+                    // The sockets read daemonUrl from settings, so reconnect
+                    // them onto the new engine immediately.
+                    socket.reconnect()
+                    runCatching { history.refreshProviders() }
+                }
+            },
+            onError = { err -> engineMsg = err },
+            refresh = { engines.refresh().also { engineSnapshot = it } },
         )
     }
 }
@@ -640,6 +705,130 @@ private fun selectedModel(
     return modelsByProvider[route.provider]?.firstOrNull { it.id == route.model }
 }
 
+
+/**
+ * The row that opens the engine picker. It names the engine in use from the
+ * registry (not from the raw URL) so a phone that saves a gateway URL with the
+ * device name as a path segment still shows a readable name.
+ */
+@Composable
+private fun EnginePickerRow(
+    snapshot: EngineDirectory.Snapshot,
+    daemonUrl: String,
+    onClick: () -> Unit,
+) {
+    val active = snapshot.active
+    val label = active?.name?.ifBlank { active.id } ?: daemonUrl.ifBlank { "not selected" }
+    val detail = active?.id?.takeIf { it.isNotBlank() } ?: run {
+        val seg = daemonUrl.trimEnd('/').substringAfterLast('/', "")
+        seg.ifBlank { daemonUrl }
+    }
+    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Text("Active engine", style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant)
+        OutlinedButton(onClick = onClick, modifier = Modifier.fillMaxWidth()) {
+            Column(Modifier.weight(1f)) {
+                Text(label, style = MaterialTheme.typography.bodyMedium)
+                Text(detail, style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            Text("${snapshot.engines.size} available", style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+    }
+}
+
+/**
+ * The engine list from the gateway. Tapping a row probes that engine's /healthz
+ * before anything is written: a dead engine must not become the new address.
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun EnginePickerSheet(
+    engines: EngineDirectory,
+    snapshot: EngineDirectory.Snapshot,
+    onDismiss: () -> Unit,
+    onPicked: (EngineEntry, EngineDirectory.Probe) -> Unit,
+    onError: (String) -> Unit,
+    refresh: suspend () -> EngineDirectory.Snapshot,
+) {
+    val scope = rememberCoroutineScope()
+    var checking by remember { mutableStateOf("") }
+    ModalBottomSheet(onDismissRequest = onDismiss) {
+        Column(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 8.dp)) {
+            Row(
+                Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween,
+            ) {
+                Text("Choose engine", style = MaterialTheme.typography.titleMedium)
+                IconButton(onClick = { scope.launch { refresh() } }) {
+                    Icon(Icons.Default.Refresh, contentDescription = "Refresh engine list")
+                }
+            }
+            Text(
+                if (snapshot.fetchedAt > 0) "Updated ${snapshot.fetchedAt}"
+                else "No registry answer yet — showing the last saved list",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Spacer(Modifier.height(8.dp))
+            if (snapshot.engines.isEmpty()) {
+                Text("No engines in the registry. Start an engine, then refresh.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            LazyColumn(Modifier.fillMaxWidth().heightIn(max = 420.dp)) {
+                items(snapshot.engines, key = { it.id }) { engine ->
+                    val selected = engine.id == snapshot.activeId
+                    Row(
+                        Modifier
+                            .fillMaxWidth()
+                            .clip(MaterialTheme.shapes.medium)
+                            .clickable(enabled = checking.isEmpty()) {
+                                checking = engine.id
+                                scope.launch {
+                                    val probe = engines.probe(engine.url)
+                                    checking = ""
+                                    if (probe.ok) onPicked(engine, probe) else onError(
+                                        "Cannot reach ${engine.name}: ${probe.error.ifBlank { "not an engine" }}"
+                                    )
+                                }
+                            }
+                            .padding(12.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text(
+                            if (engine.online) "●" else "○",
+                            color = if (engine.online) MaterialTheme.colorScheme.primary
+                                    else MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                        Spacer(Modifier.width(10.dp))
+                        Column(Modifier.weight(1f)) {
+                            Text(engine.name, style = MaterialTheme.typography.bodyMedium)
+                            Text(
+                                listOfNotNull(
+                                    engine.subtitle.ifBlank { null },
+                                    engine.tag.ifBlank { null },
+                                    engine.url,
+                                ).joinToString(" · "),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                            if (checking == engine.id) {
+                                Text("Checking…", style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.primary)
+                            }
+                        }
+                        if (selected) Icon(Icons.Default.Check, contentDescription = "Selected")
+                    }
+                    HorizontalDivider()
+                }
+            }
+            Spacer(Modifier.height(12.dp))
+        }
+    }
+}
 
 @Composable
 private fun NodeCard(

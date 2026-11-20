@@ -1,7 +1,7 @@
 # แอพสลับ engine — overview
 
-> สถานะ: **ข้อ 1–3 ทำแล้ว** (catalog, ตัวชี้เดียว, discovery ไม่แย่งสิทธิ์) — ยังไม่ทำ Room migration
-> (`engineId`) และ UI สวิตช์ · เอกสารนี้คงส่วนที่เหลือไว้ตามเดิม
+> สถานะ: **ข้อ 1–3 และ 5 ทำแล้ว** (catalog, ตัวชี้เดียว, discovery ไม่แย่งสิทธิ์, UI bottom sheet)
+> — ยังไม่ทำ Room migration (`engineId`) และ terminal/session map ต่อ engine
 > ฝั่ง server พร้อมแล้ว: Worker เป็นเจ้าของ `engine.aixodia.dpdns.org` ทั้ง host และเสิร์ฟ registry
 
 ## 1. วันนี้แอพเลือก engine ได้แค่ตัวเดียว
@@ -126,7 +126,7 @@ tap row
 | 2 | ตัวชี้เดียว (`saveDaemon`) + `EngineDirectory.select()` เขียน id+url พร้อมกัน | ✅ `EngineDirectory.kt` |
 | 3 | discovery ไม่แย่งสิทธิ์ (เทียบ engine id ใน path) | ✅ `DaemonDiscovery.decide()` |
 | 4 | Room migration `engineId` | ค้าง |
-| 5 | UI bottom sheet | ค้าง |
+| 5 | UI bottom sheet | ✅ `SettingsScreen.kt` — `EnginePickerRow`/`EnginePickerSheet`, probe `/healthz` ก่อนสลับ, `EngineDirectory.probe()` |
 | 6 | terminal/`sessionId` เป็น map ต่อ engine | ค้าง (ไม่บล็อกการสลับ) |
 
 ## 8. ลำดับงานที่เหลือ

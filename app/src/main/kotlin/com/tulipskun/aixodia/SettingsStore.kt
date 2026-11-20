@@ -164,12 +164,27 @@ class SettingsStore(private val ctx: Context) {
         }
     }
 
-    /** The address selection, written together with the address it names. */
+    /**
+     * The address selection, written together with the address it names.
+     *
+     * Both keys land in one `edit`: a reader must never see a new id next to
+     * the old address (or the reverse). `writeDaemon` also clears the provider
+     * cache when the address changes, so fold its work into this same edit
+     * instead of calling it and writing the id in a second transaction.
+     */
     suspend fun selectEngine(id: String, url: String) {
         val cleanId = id.trim()
         if (cleanId.isEmpty()) return
-        writeDaemon(url)
-        ctx.ds.edit { it[activeEngineId] = cleanId }
+        val clean = url.trim().trimEnd('/').ifBlank { DEFAULT_DAEMON_URL }
+        ctx.ds.edit {
+            if ((it[daemonUrl] ?: "").trim().trimEnd('/') != clean) {
+                it.remove(providersCache)
+                it.remove(providersCacheUrl)
+            }
+            it[endpoint] = clean
+            it[daemonUrl] = clean
+            it[activeEngineId] = cleanId
+        }
     }
 
     suspend fun currentEngineId(): String = activeEngineIdFlow.first()

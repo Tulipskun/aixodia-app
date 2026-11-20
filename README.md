@@ -43,7 +43,7 @@ db/             Cloudflare D1 schema + migrations (applied with wrangler, no Wor
    Cloudflare API, nothing is deployed. D1 stores chat history and runtime state,
    not daemon discovery. See `db/README.md`.
 2. **Workers KV**: create namespace `AIXODIA_CONFIG` and set `tunnel_token` to the
-   Named Tunnel connector token and `tunnel_url` to `https://aixodia.dpdns.org`.
+   Named Tunnel connector token and `tunnel_url` to `https://engine.aixodia.dpdns.org`.
    The engine writes `daemon/url` and `daemon/version` only when their values change.
 3. **Daemon**: run `Tulipskun/aixodia-engine` — it serves the run API, the terminal
    WebSocket and `/v1/...`, starts the Named Tunnel from Workers KV, publishes its stable endpoint to KV after
@@ -52,7 +52,7 @@ db/             Cloudflare D1 schema + migrations (applied with wrangler, no Wor
    Device Flow (the same OAuth App client id as the dashboard). The app exchanges
    the OAuth token at `POST /v1/auth/token`; it does not ask for a Cloudflare
    token or access D1/KV directly. The Engine URL defaults to
-   `https://aixodia.dpdns.org`. Providers, write-only key pools and per-agent
+   `https://engine.aixodia.dpdns.org`. Providers, write-only key pools and per-agent
    model routes remain in Settings.
 
 ## Architecture
@@ -92,7 +92,7 @@ One credential, three paths:
    DataStore, Room or disk. When the Engine session expires, the user signs in
    again. Sign out clears the stored Engine session.
 
-The app uses `https://aixodia.dpdns.org` by default. The Engine must have
+The app uses `https://engine.aixodia.dpdns.org` by default. The Engine must have
 `ALLOWED_GITHUB_USERS` configured and expose `/v1/auth/token`. No PAT or
 Cloudflare API token is entered in the Android app.
 

@@ -37,7 +37,7 @@ class MainActivity : ComponentActivity() {
                 Surface(color = MaterialTheme.colorScheme.background) {
                     ChatScreen(
                         repo = c.repo, settings = c.settings, history = c.historyApi,
-                        socket = c.chat, discovery = c.discovery,
+                        socket = c.chat, discovery = c.discovery, engines = c.engines,
                     )
                 }
             }

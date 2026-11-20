@@ -178,6 +178,7 @@ fun ChatScreen(
     socket: ChatTransport,
     discovery: DaemonDiscovery? = null,
     clientToken: ClientToken = ClientToken.shared,
+    engines: com.tulipskun.aixodia.data.remote.EngineDirectory? = null,
 ) {
     val isSignedIn by settings.isSignedInFlow.collectAsStateWithLifecycle(initialValue = false)
     val daemonUrl by settings.daemonUrlFlow.collectAsStateWithLifecycle(initialValue = "")
@@ -274,7 +275,7 @@ fun ChatScreen(
             SettingsScreen(
                 settings = settings, history = history, socket = socket,
                 sessionId = sessId, onBack = { showSettings = false },
-                discovery = discovery,
+                discovery = discovery, engines = engines,
                 onOpenBackup = { showSettings = false; showBackup = true },
                 onOpenFiles = { showSettings = false; showFiles = true },
             )
@@ -411,7 +412,7 @@ fun ChatScreen(
         SettingsScreen(
             settings = settings, history = history, socket = socket,
             sessionId = vm.sessionId, onBack = { showSettings = false },
-            discovery = discovery,
+            discovery = discovery, engines = engines,
             onOpenBackup = { showSettings = false; showBackup = true },
             onOpenFiles = { showSettings = false; showFiles = true },
         )

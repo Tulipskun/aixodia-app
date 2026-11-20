@@ -87,6 +87,44 @@ class EngineDirectory(
         }
     }
 
+    /**
+     * Asks one address whether it is an engine, without changing the current
+     * one. A switch reads this before writing anything: an engine that does not
+     * answer /healthz must not become the phone's new address.
+     */
+    suspend fun probe(url: String): Probe = withContext(Dispatchers.IO) {
+        val base = url.trim().trimEnd('/')
+        if (!(base.startsWith("https://") || base.startsWith("http://"))) {
+            return@withContext Probe(false, "", "not an http(s) address")
+        }
+        val request = Request.Builder().url("$base/healthz")
+            .header("Accept", "application/json")
+            .get().build()
+        try {
+            client.newCall(request).execute().use { response ->
+                val body = response.body?.string().orEmpty()
+                if (!response.isSuccessful) {
+                    return@withContext Probe(false, "", "HTTP ${response.code}")
+                }
+                val json = runCatching { org.json.JSONObject(body) }.getOrNull()
+                    ?: return@withContext Probe(false, "", "not an engine")
+                // A dashboard host also answers /healthz with 200 — but with a
+                // page, not the engine's `ok` field. Require the field so a
+                // wrong address can never be mistaken for a healthy engine.
+                if (!json.has("ok")) return@withContext Probe(false, "", "not an engine")
+                Probe(
+                    ok = json.optBoolean("ok", false),
+                    version = json.optString("version"),
+                    error = "",
+                )
+            }
+        } catch (e: Exception) {
+            Probe(false, "", e.message ?: "unreachable")
+        }
+    }
+
+    data class Probe(val ok: Boolean, val version: String, val error: String)
+
     data class Snapshot(
         val engines: List<EngineEntry>,
         val activeId: String,
