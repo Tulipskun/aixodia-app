@@ -45,6 +45,11 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.tulipskun.aixodia.R
+import com.tulipskun.aixodia.ui.theme.aixodia
+import androidx.compose.ui.unit.sp
+import androidx.compose.ui.graphics.Color
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import com.tulipskun.aixodia.data.model.ChatSession
 import java.util.Calendar
 import java.util.concurrent.TimeUnit
@@ -124,7 +129,14 @@ fun SessionDrawerContent(
     }
     val groups = remember(filtered) { groupSessionsByDate(filtered) }
 
-    ModalDrawerSheet {
+    // The panel is the page, not a card laid on it: the console opens its menu
+    // from the page's own surface, with one hairline between the two.
+    ModalDrawerSheet(
+        drawerContainerColor = MaterialTheme.colorScheme.background,
+        drawerContentColor = MaterialTheme.colorScheme.onSurface,
+        drawerTonalElevation = 0.dp,
+        drawerShape = RoundedCornerShape(0.dp),
+    ) {
         // The list scrolls and takes the room it needs; the footer stays pinned
         // to the bottom of the sheet. Sharing one scroll left the footer
         // floating mid-sheet with dead space under it.
@@ -141,31 +153,42 @@ fun SessionDrawerContent(
                     .weight(1f)
                     .fillMaxWidth(),
             ) {
+                // A list says what it is before it lists anything: one label, the
+                // count beside it, and no heading competing with the bar above.
                 item(key = "header") {
-                    Column {
-                        Text(
-                            stringResource(R.string.drawer_chats),
-                            modifier = Modifier.padding(start = 20.dp, top = 20.dp, end = 20.dp, bottom = 4.dp),
-                            style = MaterialTheme.typography.titleLarge,
-                            fontWeight = FontWeight.SemiBold,
-                        )
-                        Text(
+                    Text(
+                        stringResource(R.string.drawer_chats).uppercase() + "  \u00b7  " +
                             pluralStringResource(R.plurals.drawer_sessions, sessions.size, sessions.size),
-                            modifier = Modifier.padding(horizontal = 20.dp),
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
+                        modifier = Modifier.padding(start = 12.dp, top = 16.dp, end = 12.dp, bottom = 8.dp),
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        letterSpacing = 0.9.sp,
+                    )
                 }
                 item(key = "new") {
-                    OutlinedButton(
-                        onClick = onNewChat,
-                        modifier = Modifier
-                            .padding(horizontal = 16.dp, vertical = 12.dp)
-                            .fillMaxWidth(),
+                    Row(
+                        Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 12.dp)
+                            .clip(MaterialTheme.shapes.small)
+                            .background(MaterialTheme.colorScheme.surfaceContainerHigh)
+                            .border(1.dp, MaterialTheme.aixodia.line, MaterialTheme.shapes.small)
+                            .clickable(onClick = onNewChat)
+                            .defaultMinSize(minHeight = 44.dp)
+                            .padding(horizontal = 12.dp),
+                        verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(18.dp))
-                        Text("  " + stringResource(R.string.new_chat))
+                        Icon(
+                            Icons.Default.Add,
+                            contentDescription = null,
+                            modifier = Modifier.size(16.dp),
+                            tint = MaterialTheme.colorScheme.primary,
+                        )
+                        Text(
+                            stringResource(R.string.new_chat),
+                            modifier = Modifier.padding(start = 8.dp),
+                            style = MaterialTheme.typography.bodyMedium,
+                        )
                     }
                 }
                 item(key = "search") {
@@ -221,11 +244,11 @@ fun SessionDrawerContent(
                     groups.forEach { group ->
                         item(key = "g-" + group.label) {
                             Text(
-                                stringResource(group.labelRes),
-                                modifier = Modifier.padding(start = 20.dp, top = 8.dp, bottom = 4.dp),
+                                stringResource(group.labelRes).uppercase(),
+                                modifier = Modifier.padding(start = 12.dp, top = 12.dp, bottom = 4.dp),
                                 style = MaterialTheme.typography.labelMedium,
-                                color = MaterialTheme.colorScheme.primary,
-                                fontWeight = FontWeight.SemiBold,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                letterSpacing = 0.9.sp,
                             )
                         }
                         items(group.sessions, key = { it.id }) { s ->
@@ -253,35 +276,36 @@ fun SessionRow(
     onOpen: () -> Unit,
     onLongPress: () -> Unit,
 ) {
-    val bg = if (active) {
-        MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.45f)
-    } else {
-        MaterialTheme.colorScheme.surface
-    }
+    // A row carries its state on the row itself, the way the console's session
+    // rows do: the current one is a step lighter with a hairline around it, and
+    // nothing is tinted blue to say "selected".
+    val bg = if (active) MaterialTheme.colorScheme.surfaceContainerHighest else Color.Transparent
     Row(
         Modifier
             .fillMaxWidth()
-            .padding(horizontal = 8.dp, vertical = 2.dp)
-            .clip(MaterialTheme.shapes.medium)
+            .padding(horizontal = 8.dp, vertical = 1.dp)
+            .clip(MaterialTheme.shapes.small)
             .background(bg)
+            .border(
+                1.dp,
+                if (active) MaterialTheme.aixodia.line else Color.Transparent,
+                MaterialTheme.shapes.small,
+            )
             .combinedClickable(onClick = onOpen, onLongClick = onLongPress)
-            // The active chat was a tint, a dot and a weight — three visuals and
+            // The active chat was a tint, an icon and a weight — three visuals and
             // no semantics, so a screen reader heard two identical rows.
             .semantics { selected = active }
             .defaultMinSize(minHeight = 48.dp)
-            .padding(horizontal = 12.dp, vertical = 10.dp),
+            .padding(horizontal = 10.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Box(
-            Modifier
-                .size(8.dp)
-                .clip(RoundedCornerShape(4.dp))
-                .background(
-                    if (active) MaterialTheme.colorScheme.primary
-                    else MaterialTheme.colorScheme.outlineVariant,
-                ),
+        Icon(
+            Icons.Outlined.ChatBubbleOutline,
+            contentDescription = null,
+            modifier = Modifier.size(16.dp),
+            tint = if (active) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
         )
-        Column(Modifier.padding(start = 10.dp).weight(1f)) {
+        Column(Modifier.padding(start = 8.dp).weight(1f)) {
             Text(
                 s.title.ifBlank { s.id },
                 maxLines = 1,

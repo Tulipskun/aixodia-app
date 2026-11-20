@@ -1,6 +1,11 @@
 package com.tulipskun.aixodia.ui.display
 
 import androidx.annotation.StringRes
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.ui.res.painterResource
+import androidx.compose.material.icons.filled.Menu
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.horizontalScroll
@@ -74,6 +79,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Visibility
@@ -707,5 +713,107 @@ private fun AttachOption(icon: androidx.compose.ui.graphics.vector.ImageVector, 
         Icon(icon, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
         Spacer(Modifier.size(16.dp))
         Text(label, style = MaterialTheme.typography.bodyLarge)
+    }
+}
+
+
+/**
+ * The bar, as the console draws it.
+ *
+ * 68 tall, a menu button on the left that is a 44 square with a hairline around
+ * it, the lockup in the middle, and one control on the right. The screen's own
+ * title is not here: on the console a bar carries the product and the screen
+ * underneath carries the title, so a thread reads the same way on both.
+ */
+@Composable
+fun ConsoleBar(
+    onMenu: () -> Unit,
+    menuLabel: String,
+    onRefresh: () -> Unit,
+    refreshLabel: String,
+) {
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .height(68.dp)
+            .background(MaterialTheme.colorScheme.background)
+            .border(width = 1.dp, color = MaterialTheme.aixodia.line)
+            .statusBarsPadding()
+            .padding(horizontal = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        BarButton(Icons.Default.Menu, menuLabel, onMenu)
+        Row(
+            Modifier.weight(1f),
+            horizontalArrangement = Arrangement.Center,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Image(
+                painter = painterResource(R.drawable.aixodia_mark),
+                contentDescription = null,
+                modifier = Modifier.size(22.dp),
+            )
+            Spacer(Modifier.size(8.dp))
+            Text(
+                "AIxodia",
+                style = MaterialTheme.typography.headlineSmall,
+                letterSpacing = 0.2.sp,
+                color = MaterialTheme.colorScheme.onSurface,
+            )
+        }
+        BarButton(Icons.Default.Refresh, refreshLabel, onRefresh)
+    }
+}
+
+/** A bar's control: 44 square, a step above the page, with a hairline of its own. */
+@Composable
+private fun BarButton(icon: androidx.compose.ui.graphics.vector.ImageVector, label: String, onClick: () -> Unit) {
+    Box(
+        Modifier
+            .size(44.dp)
+            .clip(MaterialTheme.shapes.medium)
+            .background(MaterialTheme.colorScheme.surfaceContainerHigh)
+            .border(1.dp, MaterialTheme.aixodia.line, MaterialTheme.shapes.medium)
+            .clickable(onClick = onClick)
+            .semantics { contentDescription = label },
+        contentAlignment = Alignment.Center,
+    ) {
+        Icon(
+            icon,
+            contentDescription = null,
+            modifier = Modifier.size(18.dp),
+            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    }
+}
+
+/**
+ * What the screen is, said once above it: the title on the left edge and one
+ * reading on the right, the way the console heads a list.
+ */
+@Composable
+fun ScreenHead(title: String, meta: String) {
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .padding(start = 4.dp, end = 4.dp, top = 8.dp, bottom = 4.dp),
+        verticalAlignment = Alignment.Bottom,
+        horizontalArrangement = Arrangement.SpaceBetween,
+    ) {
+        Text(
+            title,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            style = MaterialTheme.typography.headlineSmall,
+            color = MaterialTheme.colorScheme.onSurface,
+        )
+        if (meta.isNotBlank()) {
+            Text(
+                meta,
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
+            )
+        }
     }
 }

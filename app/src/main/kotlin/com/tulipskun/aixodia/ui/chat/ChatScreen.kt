@@ -77,7 +77,6 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.rememberDrawerState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -128,13 +127,14 @@ import com.tulipskun.aixodia.ui.chat.ChatViewModel.LiveBlock
 import com.tulipskun.aixodia.ui.display.AttachSheet
 import com.tulipskun.aixodia.ui.display.ChatComposer
 import com.tulipskun.aixodia.ui.display.ComposerCommand
-import com.tulipskun.aixodia.ui.display.ConnDot
+import com.tulipskun.aixodia.ui.display.ConsoleBar
 import com.tulipskun.aixodia.ui.display.EmptyChatState
 import com.tulipskun.aixodia.ui.display.ErrorCard
 import com.tulipskun.aixodia.ui.display.drawerFloorGuard
 import com.tulipskun.aixodia.ui.display.GoalsCard
 import com.tulipskun.aixodia.ui.display.LiveAnswer
 import com.tulipskun.aixodia.ui.display.LiveThink
+import com.tulipskun.aixodia.ui.display.ScreenHead
 import com.tulipskun.aixodia.ui.display.CompactMarker
 import com.tulipskun.aixodia.ui.display.MessageBlock
 import com.tulipskun.aixodia.ui.display.OfflineBanner
@@ -796,48 +796,14 @@ fun ChatScreen(
             contentWindowInsets = WindowInsets(0, 0, 0, 0),
             snackbarHost = { SnackbarHost(snackbar) },
             topBar = {
-                TopAppBar(
-                    // The title used to carry the model chip under it. The chip
-                    // is gone: a long model name under the title squeezed the
-                    // title, and the model is a property of the next message
-                    // rather than of the screen, so it moved down into the
-                    // composer's own bottom row (see ChatComposer).
-                    title = {
-                        Text(
-                            sessionTitle(sessions, activeSession),
-                            maxLines = 1,
-                            style = MaterialTheme.typography.titleMedium,
-                        )
-                    },
-                    navigationIcon = {
-                        IconButton(onClick = { scope.launch { drawer.open() } }) {
-                            Icon(Icons.Default.Menu, contentDescription = stringResource(R.string.menu))
-                        }
-                    },
-                    actions = {
-                        IconButton(onClick = { showPushNowDialog = true }) {
-                            Icon(
-                                Icons.Default.Refresh,
-                                contentDescription = stringResource(R.string.push_now_title),
-                            )
-                        }
-                        // Status at a glance: a coloured dot and how long the
-                        // machine has been up. No words — the colour is the state.
-                        // The counter is on screen from the first frame, at zero
-                        // until a start time is known, so the header is never
-                        // blank while the app waits for the daemon.
-                        ConnDot(conn)
-                        val uptime = formatUptime(uptimeSince, uptimeNow, "HH:mm:ss")
-                        if (uptime.isNotBlank()) {
-                            Text(
-                                uptime,
-                                style = MaterialTheme.typography.labelMedium,
-                                fontFamily = FontFamily.Monospace,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                modifier = Modifier.padding(start = 2.dp, end = 6.dp),
-                            )
-                        }
-                    },
+                // The console's bar: the product, a menu, one control. The screen's
+                // own title sits under it, where the console puts a heading, so the
+                // same thread reads the same way on both.
+                ConsoleBar(
+                    onMenu = { scope.launch { drawer.open() } },
+                    menuLabel = stringResource(R.string.menu),
+                    onRefresh = { showPushNowDialog = true },
+                    refreshLabel = stringResource(R.string.push_now_title),
                 )
             },
             bottomBar = {
@@ -978,6 +944,16 @@ fun ChatScreen(
                     showOfflineCard = false
                 }
             }
+            // The screen's own reading: whether the machine is reachable, and how
+            // long it has been up, in the place the console puts a count.
+            val statusWord = when (conn) {
+                ConnState.ONLINE -> stringResource(R.string.online)
+                ConnState.CONNECTING -> stringResource(R.string.connecting)
+                ConnState.OFFLINE -> stringResource(R.string.offline)
+                ConnState.AUTH_FAILED -> stringResource(R.string.unauthorised)
+            }
+            val uptimeText = formatUptime(uptimeSince, uptimeNow, "HH:mm:ss")
+            val headMeta = if (uptimeText.isNotBlank()) " $statusWord · $uptimeText" else statusWord
             LazyColumn(
                 state = listState,
                 modifier = Modifier.fillMaxSize().padding(pad).padding(horizontal = 12.dp),
@@ -992,6 +968,12 @@ fun ChatScreen(
                 // state delegate again inside an item is how `index - 1` could
                 // be asked of a thread that had just switched to an empty one.
                 val rows = messages
+                item(key = "screen-head") {
+                    ScreenHead(
+                        title = sessionTitle(sessions, activeSession),
+                        meta = headMeta,
+                    )
+                }
                 if (threadLoaded && rows.isEmpty() && liveText.isBlank() && liveBlocks.isEmpty()) {
                     item { EmptyChatState() }
                 }
