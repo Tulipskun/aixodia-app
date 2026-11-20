@@ -26,7 +26,7 @@ class KeysSnapshot {
     private fun keys(ctrlOn: Boolean = false, shiftOn: Boolean = false) {
         paparazzi.snapshot {
             AIxodiaTheme {
-                Box(Modifier.fillMaxWidth().background(Color(0xFF0B0F14))) {
+                Box(Modifier.fillMaxWidth().background(Color(0xFF060607))) {
                     TerminalKeys(
                         ctrlOn = ctrlOn,
                         altOn = false,

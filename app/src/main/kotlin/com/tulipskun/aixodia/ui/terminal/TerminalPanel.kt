@@ -138,24 +138,29 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 
-/** The panel's own colours: a terminal reads as a terminal, not as a chat bubble. */
-private val Ink = Color(0xFF0B0F14)
-private val InkRaised = Color(0xFF111821)
-private val InkLine = Color(0xFF1A222C)
-private val InkSeam = Color(0xFF2A3544)
-private val InkActive = Color(0xFF1E2A38)
-private val InkText = Color(0xFFD7E0EA)
-private val KeyActiveFill = Color(0xFF2A3A4A)
-private val KeyActiveText = Color(0xFFE8F0F8)
+/**
+ * The panel's own surfaces, taken from the console's terminal so the phone and the web
+ * draw the same terminal: the page nearly black, the bar a step above it, and a hairline
+ * where the two meet. Nothing here is a colour the chat does not also own.
+ */
+private val Ink = Color(0xFF060607)
+private val InkRaised = Color(0xFF141417)
+private val InkLine = Color(0x17FFFFFF)
+private val InkSeam = Color(0x2BFFFFFF)
+private val InkActive = Color(0xFF1D1D21)
+private val InkText = Color(0xFFF2F2F3)
+private val KeyActiveFill = Color(0xFF1D1D21)
+private val KeyActiveText = Color(0xFFF2F2F3)
 
 /** The arrow glyphs draw smaller than the same size of word, so they carry a size up. */
 private val Arrows = TextStyle(fontSize = 22.sp, fontWeight = FontWeight.Medium)
 
-/** A pressed state layer is 10% of the foreground: InkText laid over the bar's own [Ink]. */
-private val KeyPressedFill = Color(0xFF1F2429)
-private val InkDim = Color(0xFF8CA0B3)
-private val Signal = Color(0xFF6FE3B0)
-private val Danger = Color(0xFFFF8A8A)
+/** A pressed state layer is a step above the bar it sits on. */
+private val KeyPressedFill = Color(0xFF1D1D21)
+private val InkDim = Color(0xFFA3A3AB)
+private val Signal = Color(0xFF4FBF8B)
+private val Warn = Color(0xFFD3B27F)
+private val Danger = Color(0xFFE0636E)
 
 /**
  * A held arrow starts repeating after the first pause, then fires once per
@@ -606,7 +611,7 @@ fun TerminalWindow(
                                 if (!atBottom.value) {
                                     Box(Modifier.padding(end = 12.dp, bottom = 12.dp)) {
                                         Surface(
-                                            color = Color(0xFF1A222C),
+                                            color = InkRaised,
                                             shape = RoundedCornerShape(50),
                                             modifier = Modifier.clickable {
                                                 view.scrollToBottom()
@@ -1048,7 +1053,7 @@ private fun SidebarAction(
 
 private fun statusColor(state: TermState): Color = when (state) {
     TermState.OPEN -> Signal
-    TermState.CONNECTING -> Color(0xFFFFC66D)
+    TermState.CONNECTING -> Warn
     TermState.ENDED, TermState.CLOSED -> Danger
 }
 
@@ -1576,7 +1581,7 @@ private fun TerminalSessionBar(
                 shape = shape,
                 border = BorderStroke(
                     1.dp,
-                    if (selected) Color(0xFF31516B) else InkLine,
+                    if (selected) InkSeam else InkLine,
                 ),
                 modifier = Modifier
                     .fillMaxWidth()

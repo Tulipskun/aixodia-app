@@ -93,7 +93,10 @@ import java.util.Locale
  * the bubble is already on the right and already the only blue thing in the
  * thread, so a tail would be a third way of saying the same thing.
  */
-val UserBubbleShape = RoundedCornerShape(13.dp)
+/* The console draws a message at a 12 radius with a hairline around it and no
+   shadow; the bubble is that shape, so a thread on the phone and a thread on the
+   web are built from the same two numbers. */
+val UserBubbleShape = RoundedCornerShape(12.dp)
 fun formatClock(ts: Long): String =
     SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date(ts))
 
@@ -231,7 +234,8 @@ fun MessageBlock(
                 color = MaterialTheme.colorScheme.primaryContainer,
                 contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
                 shape = UserBubbleShape,
-                tonalElevation = 1.dp,
+                /* No elevation: the console separates two darks with a hairline. */
+                tonalElevation = 0.dp,
                 modifier = Modifier
                     .padding(top = 4.dp)
                     .widthIn(max = 760.dp)

@@ -16,35 +16,41 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
-// The dark scheme's surfaces, all of them one navy at five strengths.
+// The dark scheme is the console's palette, copied from the one place the web
+// defines it (`:root` in styles.css). Two products, one set of readings: a
+// neutral grey scale and a single blue accent, with green for up, amber for
+// waiting and red for a refusal. Nothing here is a mood of its own.
 //
-// The page is pure black and every surface above it is the old navy taken down
-// to 55% (k = 0.55). That is the whole trick of the look: a surface only has to
-// sit far enough above black to be seen, and the higher it sits the louder it
-// reads — so this scale is a reading order, running from the well a code block
-// sits in up to the pill resting on a card.
-private val NavyRecess = Color(0xFF0B1220)
-private val NavySunken = Color(0xFF0E131C)
-private val NavyBase = Color(0xFF111720)
-private val NavyCard = Color(0xFF151D29)
-private val NavyPill = Color(0xFF19202B)
+// The greys are a reading order rather than decoration: the page is nearly
+// black, a surface sits a step above it, and each step up is a surface the
+// reader is meant to notice. There is no elevation anywhere — the console draws
+// a hairline where two darks meet instead of a shadow, and so does this.
+private val Page = Color(0xFF060607)
+private val Surface1 = Color(0xFF0D0D0F)
+private val Surface2 = Color(0xFF141417)
+private val Surface3 = Color(0xFF1D1D21)
 /** The hairline that keeps two darks meeting each other from reading as one. */
-private val NavyLine = Color(0xFF2A3544)
+private val Line = Color(0x17FFFFFF)
+/** The same line, said louder, for a control's own edge. */
+private val LineStrong = Color(0x2BFFFFFF)
+private val Ink = Color(0xFFF2F2F3)
+private val Muted = Color(0xFFA3A3AB)
+private val Dim = Color(0xFF6F6F78)
 
-/** The accent: icons, the cursor, the slash on the command button. */
-private val Accent = Color(0xFF7FB2FF)
+/** The accent: icons, the owner's own words, the one button worth hitting. */
+private val Accent = Color(0xFF7FA6D3)
+private val Signal = Color(0xFF4FBF8B)
+private val Warn = Color(0xFFD3B27F)
+private val Danger = Color(0xFFE0636E)
 
-/** The user's own words, in a blue deep enough to read as the page turned. */
-private val Bubble = Color(0xFF17305A)
-
-private val Blue900 = Color(0xFF0A0F2C)
-private val Blue200 = Color(0xFFD9E7FF)
+private val Blue900 = Color(0xFF060607)
+private val Blue200 = Color(0xFFF2F2F3)
 private val Mint200 = Color(0xFF9FFFE0)
 private val Sky300 = Color(0xFFB8D8FF)
 private val Sky900 = Color(0xFF102A43)
 private val Sky800 = Color(0xFF284B70)
 private val Sky200 = Color(0xFFD7EBFF)
-private val Amber300 = Color(0xFFF5C36B)
+private val Amber300 = Warn
 private val Amber900 = Color(0xFF432C00)
 private val Amber800 = Color(0xFF5F4100)
 private val Amber200 = Color(0xFFFFE1A3)
@@ -53,39 +59,41 @@ private val PaperContainer = Color(0xFFE9EFEC)
 
 private val DarkColors = darkColorScheme(
     primary = Accent,
-    onPrimary = Blue900,
-    primaryContainer = Bubble,
-    onPrimaryContainer = Blue200,
-    secondary = Sky300,
-    onSecondary = Sky900,
-    secondaryContainer = Sky800,
-    onSecondaryContainer = Sky200,
-    tertiary = Amber300,
-    onTertiary = Amber900,
-    tertiaryContainer = Amber800,
-    onTertiaryContainer = Amber200,
-    error = Color(0xFFFFB4AB),
-    onError = Color(0xFF690005),
-    errorContainer = Color(0xFF93000A),
-    onErrorContainer = Color(0xFFFFDAD6),
-    background = Color(0xFF000000),
-    onBackground = Color(0xFFF7F9FB),
-    surface = Color(0xFF000000),
-    onSurface = Color(0xFFF7F9FB),
-    surfaceVariant = NavyPill,
-    onSurfaceVariant = Color(0xFFC8DCEE),
+    onPrimary = Page,
+    // The bubble a message sits in: a step above the page, never a colour of
+    // its own. The console draws the owner's words on the louder of two greys.
+    primaryContainer = Surface3,
+    onPrimaryContainer = Ink,
+    secondary = Muted,
+    onSecondary = Page,
+    secondaryContainer = Surface3,
+    onSecondaryContainer = Ink,
+    tertiary = Warn,
+    onTertiary = Page,
+    tertiaryContainer = Surface2,
+    onTertiaryContainer = Ink,
+    error = Danger,
+    onError = Page,
+    errorContainer = Surface2,
+    onErrorContainer = Danger,
+    background = Page,
+    onBackground = Ink,
+    surface = Page,
+    onSurface = Ink,
+    surfaceVariant = Surface2,
+    onSurfaceVariant = Muted,
     surfaceTint = Accent,
-    inverseSurface = Color(0xFFE7F0FF),
-    inverseOnSurface = Blue900,
-    outline = Color(0xFF71809A),
-    outlineVariant = NavyLine,
-    surfaceBright = NavyCard,
-    surfaceDim = NavyRecess,
-    surfaceContainerLowest = NavyRecess,
-    surfaceContainerLow = NavySunken,
-    surfaceContainer = NavyBase,
-    surfaceContainerHigh = NavyCard,
-    surfaceContainerHighest = NavyPill,
+    inverseSurface = Ink,
+    inverseOnSurface = Page,
+    outline = Dim,
+    outlineVariant = Line,
+    surfaceBright = Surface3,
+    surfaceDim = Page,
+    surfaceContainerLowest = Page,
+    surfaceContainerLow = Surface1,
+    surfaceContainer = Surface1,
+    surfaceContainerHigh = Surface2,
+    surfaceContainerHighest = Surface3,
 )
 
 private val LightColors = lightColorScheme(
@@ -128,10 +136,10 @@ private val LightColors = lightColorScheme(
  *
  * A status dot is not `primary` and a send button is not `secondary`: the dot
  * has to be green/amber/red in a way a user recognises before reading, and send
- * is the one control meant to be hit without reading, so it wears a blue deeper
- * than the accent icons. They live here, next to the scheme, instead of as raw
- * hex inside two composables: one place to change them, and no second palette
- * growing in the UI layer.
+ * is the one control meant to be hit without reading, so it wears the accent the
+ * console's own send button wears. They live here, next to the scheme, instead
+ * of as raw hex inside two composables: one place to change them, and no second
+ * palette growing in the UI layer.
  */
 @Immutable
 data class AixodiaColors(
@@ -139,13 +147,18 @@ data class AixodiaColors(
     val online: Color,
     val connecting: Color,
     val offline: Color,
+    /** The hairline a bordered surface is drawn with, since the app has no shadows. */
+    val line: Color,
+    val lineStrong: Color,
 )
 
 private val DarkExtras = AixodiaColors(
-    send = Color(0xFF2F6FED),
-    online = Color(0xFF3DDC84),
-    connecting = Color(0xFFFFB020),
-    offline = Color(0xFFE5484D),
+    send = Accent,
+    online = Signal,
+    connecting = Warn,
+    offline = Danger,
+    line = Line,
+    lineStrong = LineStrong,
 )
 
 private val LightExtras = AixodiaColors(
@@ -153,6 +166,8 @@ private val LightExtras = AixodiaColors(
     online = Color(0xFF12833F),
     connecting = Color(0xFF8A5A00),
     offline = Color(0xFFB3261E),
+    line = Color(0x14000000),
+    lineStrong = Color(0x26000000),
 )
 
 private val LocalAixodiaColors = staticCompositionLocalOf { DarkExtras }
@@ -161,21 +176,46 @@ private val LocalAixodiaColors = staticCompositionLocalOf { DarkExtras }
 val MaterialTheme.aixodia: AixodiaColors
     @Composable get() = LocalAixodiaColors.current
 
+/* Four sizes, no more: 20 / 16 / 13 / 11. The console is read at the same sizes
+   on a phone, so a thread here and a terminal there are the same text at the
+   same weight. Nothing functional goes below 11. */
+private val Display = TextStyle(fontSize = 20.sp, lineHeight = 26.sp, fontWeight = FontWeight.SemiBold, letterSpacing = 0.sp)
+private val Title = TextStyle(fontSize = 16.sp, lineHeight = 22.sp, fontWeight = FontWeight.SemiBold, letterSpacing = 0.sp)
+private val Body = TextStyle(fontSize = 13.sp, lineHeight = 20.sp, letterSpacing = 0.1.sp)
+private val Label = TextStyle(fontSize = 11.sp, lineHeight = 16.sp, letterSpacing = 0.3.sp)
+
 private val AppTypography = Typography(
-    titleMedium = TextStyle(fontSize = 17.sp, lineHeight = 24.sp, fontWeight = FontWeight.SemiBold, letterSpacing = 0.sp),
-    titleSmall = TextStyle(fontSize = 15.sp, lineHeight = 22.sp, fontWeight = FontWeight.SemiBold, letterSpacing = 0.1.sp),
-    bodyMedium = TextStyle(fontSize = 15.sp, lineHeight = 22.sp, letterSpacing = 0.15.sp),
-    labelMedium = TextStyle(fontSize = 13.sp, lineHeight = 18.sp, letterSpacing = 0.3.sp),
-    labelSmall = TextStyle(fontSize = 11.sp, lineHeight = 16.sp, letterSpacing = 0.4.sp),
+    displaySmall = Display,
+    headlineSmall = Display,
+    titleLarge = Title,
+    titleMedium = Title,
+    titleSmall = Body.copy(fontWeight = FontWeight.SemiBold),
+    bodyLarge = Body,
+    bodyMedium = Body,
+    bodySmall = Body,
+    labelLarge = Body,
+    labelMedium = Label,
+    labelSmall = Label,
 )
 
+/* The console's radius is 12 and its gaps are 4 / 8 / 12 / 16 / 24. These are the
+   same steps in dp, so a card here has the corners of a card there. */
 private val AppShapes = Shapes(
-    extraSmall = RoundedCornerShape(6.dp),
-    small = RoundedCornerShape(10.dp),
-    medium = RoundedCornerShape(16.dp),
-    large = RoundedCornerShape(22.dp),
-    extraLarge = RoundedCornerShape(28.dp),
+    extraSmall = RoundedCornerShape(4.dp),
+    small = RoundedCornerShape(8.dp),
+    medium = RoundedCornerShape(12.dp),
+    large = RoundedCornerShape(16.dp),
+    extraLarge = RoundedCornerShape(24.dp),
 )
+
+/** The console's spacing steps, so no screen has a reason to invent a number. */
+object Space {
+    val s1 = 4.dp
+    val s2 = 8.dp
+    val s3 = 12.dp
+    val s4 = 16.dp
+    val s5 = 24.dp
+}
 
 /**
  * The app theme. Dark, with the corner radius that the app's own shapes are
@@ -193,10 +233,10 @@ fun AIxodiaTheme(
     val scheme = if (accent == null) base else base.copy(primary = accent, surfaceTint = accent)
     val radius = cornerRadius.coerceIn(0, 32)
     val shapes = AppShapes.copy(
-        small = RoundedCornerShape((radius * 0.55f).toInt().dp),
+        small = RoundedCornerShape((radius * 0.66f).toInt().dp),
         medium = RoundedCornerShape(radius.dp),
-        large = RoundedCornerShape((radius * 1.2f).toInt().dp),
-        extraLarge = RoundedCornerShape((radius * 1.5f).toInt().dp),
+        large = RoundedCornerShape((radius * 1.33f).toInt().dp),
+        extraLarge = RoundedCornerShape((radius * 2).toInt().dp),
     )
     MaterialTheme(
         colorScheme = scheme,

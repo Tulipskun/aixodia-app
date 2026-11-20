@@ -6,15 +6,21 @@ package com.tulipskun.aixodia.term
  * never does a lookup per cell.
  */
 object TerminalColors {
-    const val DEFAULT_FG = 0xFFD7E0EA.toInt()
-    const val DEFAULT_BG = 0xFF0B0F14.toInt()
-    const val DEFAULT_CURSOR = 0xFFD7E0EA.toInt()
+    /**
+     * The console's own terminal: the page nearly black, the ink a soft white. The same
+     * numbers the web draws with, so the same bytes look the same on both.
+     */
+    const val DEFAULT_FG = 0xFFF2F2F3.toInt()
+    const val DEFAULT_BG = 0xFF060607.toInt()
+    const val DEFAULT_CURSOR = 0xFFF2F2F3.toInt()
 
     /** The 256 colours: 16 ANSI, a 6x6x6 cube, then 24 greys. */
     val PALETTE = IntArray(256).also { p ->
+        /* The sixteen the console's palette names — muted, so a coloured line reads as
+           part of the page instead of as a warning. */
         val ansi = intArrayOf(
-            0x000000, 0xCD0000, 0x00CD00, 0xCDCD00, 0x0000EE, 0xCD00CD, 0x00CDCD, 0xE5E5E5,
-            0x7F7F7F, 0xFF0000, 0x00FF00, 0xFFFF00, 0x5C5CFF, 0xFF00FF, 0x00FFFF, 0xFFFFFF,
+            0x060607, 0x6F6F78, 0x4FBF8B, 0xF6C66B, 0x7FA6D3, 0xD98BFF, 0x69C8FF, 0xF2F2F3,
+            0x4B4B52, 0x8F8F98, 0x6EE7C4, 0xFFD889, 0xA9C4E2, 0xE6A9FF, 0x9FE0FF, 0xFFFFFF,
         )
         for (i in 0 until 16) p[i] = 0xFF000000.toInt() or ansi[i]
         val steps = intArrayOf(0, 95, 135, 175, 215, 255)
