@@ -724,6 +724,10 @@ private fun AttachOption(icon: androidx.compose.ui.graphics.vector.ImageVector, 
  * it, the lockup in the middle, and one control on the right. The screen's own
  * title is not here: on the console a bar carries the product and the screen
  * underneath carries the title, so a thread reads the same way on both.
+ *
+ * The status-bar inset wraps the whole bar: ground and hairline start below the
+ * system bar, not under it. The Scaffold's content insets are zero and each bar
+ * handles its own, so the thread is inset once — here, around the bar.
  */
 @Composable
 fun ConsoleBar(
@@ -735,10 +739,13 @@ fun ConsoleBar(
     Row(
         Modifier
             .fillMaxWidth()
+            // Outside the height, so the inset moves the bar itself down. Inside
+            // it only moved the buttons down and left the ground and border drawn
+            // up under the transparent status bar.
+            .statusBarsPadding()
             .height(68.dp)
             .background(MaterialTheme.colorScheme.background)
             .border(width = 1.dp, color = MaterialTheme.aixodia.line)
-            .statusBarsPadding()
             .padding(horizontal = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
