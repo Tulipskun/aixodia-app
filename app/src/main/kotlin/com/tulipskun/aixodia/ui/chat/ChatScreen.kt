@@ -179,6 +179,10 @@ fun ChatScreen(
     discovery: DaemonDiscovery? = null,
     clientToken: ClientToken = ClientToken.shared,
     engines: com.tulipskun.aixodia.data.remote.EngineDirectory? = null,
+    /** Which surface to open first, from the engines card that was tapped. */
+    initialPane: String = "chat",
+    /** Returns to the engines list, the screen the app opens on. */
+    onBackToEngines: (() -> Unit)? = null,
 ) {
     val isSignedIn by settings.isSignedInFlow.collectAsStateWithLifecycle(initialValue = false)
     val daemonUrl by settings.daemonUrlFlow.collectAsStateWithLifecycle(initialValue = "")
@@ -201,13 +205,13 @@ fun ChatScreen(
     val sessId by settings.sessionFlow.collectAsStateWithLifecycle(initialValue = "")
     // Saveable: a rotation in the terminal or in settings used to drop the
     // reader back into the thread, losing the tab they were on.
-    var showSettings by rememberSaveable { mutableStateOf(false) }
+    var showSettings by rememberSaveable { mutableStateOf(initialPane == "settings") }
     var showProviders by rememberSaveable { mutableStateOf(false) }
-    var showTerminal by rememberSaveable { mutableStateOf(false) }
+    var showTerminal by rememberSaveable { mutableStateOf(initialPane == "terminal") }
     // The machine's own display, beside the shell. It is a branch of the chat
     // for the same reason the terminal is: it is the whole screen, because a
     // desktop sharing a screen with a composer is a desktop in a letterbox.
-    var showScreen by rememberSaveable { mutableStateOf(false) }
+    var showScreen by rememberSaveable { mutableStateOf(initialPane == "screen") }
     // The engine's backup is a branch of the chat like these three, because a
     // run outlasts the window it was started from and the reader needs a place
     // to come back to — not a line of text inside the chat it interrupts.
@@ -253,6 +257,13 @@ fun ChatScreen(
     BackHandler(enabled = showScreen) { showScreen = false }
     BackHandler(enabled = showBackup) { showBackup = false }
     BackHandler(enabled = showFiles) { showFiles = false }
+    // The engines list is the screen the app opens on; when none of the panes
+    // above is showing, the system back button returns there. Surface actions
+    // (terminal, screen) close first, so a second press leaves the chat.
+    if (onBackToEngines != null) {
+        BackHandler(enabled = !showSettings && !showProviders && !showTerminal &&
+            !showScreen && !showBackup && !showFiles) { onBackToEngines() }
+    }
 
     // Read before the configured check: a run already going on the engine is
     // worth looking at even from an install whose own settings are not set up,
@@ -507,6 +518,7 @@ fun ChatScreen(
         // blind from a dropdown and leave the answer on a line of chat text.
         ComposerCommand(stringResource(R.string.backup_and_restore)) { showBackup = true },
         ComposerCommand(stringResource(R.string.settings)) { showSettings = true },
+        ComposerCommand("Engines", enabled = onBackToEngines != null) { onBackToEngines?.invoke() },
     )
     // The header counts from a clock the engine set once, so the number has to
     // advance on the phone: a one-second tick is enough for a "2h 15m" readout.

@@ -7,10 +7,15 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.SystemBarStyle
 import androidx.activity.enableEdgeToEdge
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.ui.Modifier
 import androidx.lifecycle.lifecycleScope
 import com.tulipskun.aixodia.ui.chat.ChatScreen
+import com.tulipskun.aixodia.ui.engines.EnginesScreen
 import com.tulipskun.aixodia.ui.theme.AIxodiaTheme
 import kotlinx.coroutines.launch
 
@@ -34,11 +39,27 @@ class MainActivity : ComponentActivity() {
         applyDebugSeed(intent)
         setContent {
             AIxodiaTheme {
-                Surface(color = MaterialTheme.colorScheme.background) {
-                    ChatScreen(
-                        repo = c.repo, settings = c.settings, history = c.historyApi,
-                        socket = c.chat, discovery = c.discovery, engines = c.engines,
-                    )
+                Surface(color = MaterialTheme.colorScheme.background,
+                    modifier = Modifier.fillMaxSize()) {
+                    // The engines list is the front door, as it is on the web.
+                    // A card is checked before it is opened and becomes the
+                    // active engine there; the chat is a screen of that choice.
+                    val openedPane = remember { mutableStateOf<String?>(null) }
+                    val pane = openedPane.value
+                    if (pane == null) {
+                        EnginesScreen(
+                            engines = c.engines,
+                            onOpen = { _, _, chosen -> openedPane.value = chosen },
+                            onOpenSettings = { openedPane.value = "settings" },
+                        )
+                    } else {
+                        ChatScreen(
+                            repo = c.repo, settings = c.settings, history = c.historyApi,
+                            socket = c.chat, discovery = c.discovery, engines = c.engines,
+                            initialPane = pane,
+                            onBackToEngines = { openedPane.value = null },
+                        )
+                    }
                 }
             }
         }
