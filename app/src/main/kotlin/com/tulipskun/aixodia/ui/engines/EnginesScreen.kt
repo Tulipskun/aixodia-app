@@ -22,6 +22,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Devices
+import androidx.compose.material.icons.filled.MoreHoriz
 import androidx.compose.material.icons.filled.Monitor
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Terminal
@@ -253,7 +254,9 @@ internal fun DrawerNavRow(
 
 /**
  * One engine, drawn as the console draws a machine: a head with a state light,
- * a reading band, and a row of equal actions — each band closed by a hairline.
+ * a band of three readings, and a row of four equal actions — each band closed
+ * by a hairline. The readings and the fourth verb are drawn as the console draws
+ * them; the data and the screen behind them are wired up later.
  */
 @Composable
 internal fun EngineCard(
@@ -313,9 +316,16 @@ internal fun EngineCard(
                 .height(1.dp).background(MaterialTheme.aixodia.line),
         )
 
-        // Band two — the reading: the address and version, in the console's
-        // monospaced voice. There are no CPU/RAM/DISK metrics in the registry,
-        // so none are invented here.
+        // Band two — three readings, held apart by hairlines the way the
+        // console separates its columns. The registry does not carry a live
+        // metric yet, so each shows the console's em dash; the address stays
+        // as the caption under the readings until a series behind them exists.
+        Row(Modifier.fillMaxWidth()) {
+            MetricCell("CPU", first = true)
+            MetricCell("RAM", first = false)
+            MetricCell("DISK", first = false)
+        }
+        Spacer(Modifier.height(Space.s2))
         Text(
             listOfNotNull(
                 engine.url,
@@ -329,8 +339,10 @@ internal fun EngineCard(
             overflow = TextOverflow.Ellipsis,
         )
 
-        // Band three — what you can do. Three peers, none filled: the same
-        // icon-above-label action the console draws, disabled for a down engine.
+        // Band three — what you can do. Four peers, none filled: the same
+        // icon-above-label action the console draws. The first three open a
+        // pane; More is drawn like the console's unwired fourth verb and waits
+        // for the screen behind it.
         Box(Modifier.fillMaxWidth().height(1.dp).background(MaterialTheme.aixodia.line))
         Row(
             Modifier.fillMaxWidth().padding(top = Space.s3),
@@ -339,6 +351,43 @@ internal fun EngineCard(
             EngineAction(Icons.Default.Terminal, "Terminal", offline || busy) { onOpen("terminal") }
             EngineAction(Icons.Default.AutoAwesome, "AI", offline || busy) { onOpen("chat") }
             EngineAction(Icons.Default.Monitor, "Screen", offline || busy) { onOpen("screen") }
+            EngineAction(Icons.Default.MoreHoriz, "More", true) { }
+        }
+    }
+}
+
+/**
+ * One reading in the metrics strip: an upper-case label over a value, with a
+ * hairline down its leading edge. The value is the console's em dash until a
+ * series is wired in; no number is invented to fill the space.
+ */
+@Composable
+private fun RowScope.MetricCell(label: String, first: Boolean) {
+    Row(Modifier.weight(1f)) {
+        if (!first) {
+            Box(
+                Modifier
+                    .padding(end = Space.s3)
+                    .width(1.dp)
+                    .height(34.dp)
+                    .background(MaterialTheme.aixodia.line),
+            )
+        }
+        Column(Modifier.weight(1f)) {
+            Text(
+                label,
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                fontFamily = FontFamily.Monospace,
+                maxLines = 1,
+            )
+            Text(
+                "—",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurface,
+                fontFamily = FontFamily.Monospace,
+                maxLines = 1,
+            )
         }
     }
 }
