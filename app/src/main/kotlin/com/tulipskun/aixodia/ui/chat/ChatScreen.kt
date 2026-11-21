@@ -253,7 +253,8 @@ fun ChatScreen(
     // system back button has to return here, not leave the app.
     BackHandler(enabled = showSettings) { showSettings = false }
     BackHandler(enabled = showProviders) { showProviders = false }
-    BackHandler(enabled = showTerminal) { showTerminal = false }
+    // Back out of the terminal is handled by the window itself (it has a drawer
+    // to close first) and leaves for the engine list; see the branch below.
     BackHandler(enabled = showScreen) { showScreen = false }
     BackHandler(enabled = showBackup) { showBackup = false }
     BackHandler(enabled = showFiles) { showFiles = false }
@@ -331,9 +332,15 @@ fun ChatScreen(
         // The socket and the per-tab emulators were created above and outlive
         // this branch. Leaving the window only hides it; the shells stay on the
         // engine and every tab's WebSocket stays attached for the trip back.
+        //
+        // Back leaves for the engine list — the terminal is opened from a card,
+        // so that is the screen behind it. The window's own Close ends the shells
+        // and lands in the chat instead, because that is the pane a reader who
+        // just closed their terminal is working in.
         TerminalWindow(
             socket = terminalSocket,
             ui = terminalUi,
+            onLeave = { if (onBackToEngines != null) onBackToEngines() else showTerminal = false },
             onClose = { showTerminal = false },
         )
         return

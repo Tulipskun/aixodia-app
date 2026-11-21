@@ -36,6 +36,22 @@ class EngineCatalogTest {
     }
 
     @Test
+    fun `a field the gateway left null is nothing, not the word null`() {
+        // The live registry answers exactly like this: `"tag":null`,
+        // `"subtitle":null`. `optString` would have made both the four letters
+        // "null", which a card then captioned as if it were a tag.
+        val engines = EngineCatalog.parse(
+            """{"engines":[{"id":"m-8a7d1192","name":"m-8a7d1192",
+                "url":"https://engine.aixodia.dpdns.org/m-8a7d1192",
+                "origin_host":"m-8a7d1192.aixodia.dpdns.org","subtitle":null,"tag":null,
+                "online":true,"version":"v1.177"}]}""",
+        )
+        assertEquals("", engines[0].tag)
+        assertEquals("", engines[0].subtitle)
+        assertEquals("v1.177", engines[0].version)
+    }
+
+    @Test
     fun `an entry without a name or an address is dropped`() {
         val engines = EngineCatalog.parse(
             """{"engines":[{"id":"","url":"https://a/x"},{"id":"b","url":"not a url"},{"id":"c","url":"https://a/c"}]}""",

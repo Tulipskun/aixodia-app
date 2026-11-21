@@ -41,21 +41,30 @@ object EngineCatalog {
         val out = ArrayList<EngineEntry>(engines.length())
         for (index in 0 until engines.length()) {
             val item = engines.optJSONObject(index) ?: continue
-            val id = item.optString("id").trim()
-            val url = item.optString("url").trim().trimEnd('/')
+            val id = item.text("id")
+            val url = item.text("url").trimEnd('/')
             if (id.isEmpty() || !isAbsolute(url)) continue
             out += EngineEntry(
                 id = id,
-                name = item.optString("name").trim().ifEmpty { id },
+                name = item.text("name").ifEmpty { id },
                 url = url,
-                subtitle = item.optString("subtitle").trim(),
-                tag = item.optString("tag").trim(),
+                subtitle = item.text("subtitle"),
+                tag = item.text("tag"),
                 online = item.optBoolean("online", false),
-                version = item.optString("version").trim(),
+                version = item.text("version"),
             )
         }
         return out
     }
+
+    /**
+     * One string field, with a JSON null read as nothing.
+     *
+     * `optString` turns a null into the four letters "null", which is how a
+     * card whose engine had no tag came to be captioned `null · v1.177`.
+     */
+    private fun JSONObject.text(name: String): String =
+        if (!has(name) || isNull(name)) "" else optString(name).trim()
 
     /** The engine the pick names, falling back to the first one listed. */
     fun select(engines: List<EngineEntry>, activeId: String): EngineEntry? {

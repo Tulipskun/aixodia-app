@@ -125,6 +125,31 @@ class EngineDirectory(
 
     data class Probe(val ok: Boolean, val version: String, val error: String)
 
+    /**
+     * The readings behind one engine's card, or null when it does not answer.
+     *
+     * It is `/healthz` again — the same request the probe makes — because that is
+     * where an engine already publishes its CPU, memory and disk. Nothing new is
+     * asked of it, and an engine that is not reachable simply has no reading.
+     */
+    suspend fun health(url: String): Health? = withContext(Dispatchers.IO) {
+        val base = url.trim().trimEnd('/')
+        if (!(base.startsWith("https://") || base.startsWith("http://"))) {
+            return@withContext null
+        }
+        val request = Request.Builder().url("$base/healthz")
+            .header("Accept", "application/json")
+            .get().build()
+        try {
+            client.newCall(request).execute().use { response ->
+                if (!response.isSuccessful) return@withContext null
+                Health.parse(response.body?.string().orEmpty())
+            }
+        } catch (_: Exception) {
+            null
+        }
+    }
+
     data class Snapshot(
         val engines: List<EngineEntry>,
         val activeId: String,

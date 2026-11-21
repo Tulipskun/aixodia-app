@@ -290,6 +290,9 @@ class TerminalUiState(private val socket: TerminalSocket) {
 fun TerminalWindow(
     socket: TerminalSocket,
     ui: TerminalUiState,
+    /** The system back button: leave the window, the shells still running. */
+    onLeave: () -> Unit,
+    /** The window's own Close action: the tabs have just been ended. */
     onClose: () -> Unit,
 ) {
     val state by socket.state.collectAsStateWithLifecycle()
@@ -444,6 +447,7 @@ fun TerminalWindow(
         terminalView.value?.scrollToBottom()
     }
 
+    val currentOnLeave by rememberUpdatedState(onLeave)
     val currentOnClose by rememberUpdatedState(onClose)
     val drawerState = rememberDrawerState(DrawerValue.Closed)
     val drawerScope = rememberCoroutineScope()
@@ -458,17 +462,17 @@ fun TerminalWindow(
         currentOnClose()
     }
 
-    // Back hides the window instead of closing the terminal: the drawer closes
-    // first, then the chat is shown with every tab still attached. The explicit
-    // "Close terminal" action in the drawer is the only thing that ends shells.
-    // Compose's BackHandler callbacks run newest-first, so this one is layered
-    // above the chat screen's "leave terminal" handler; that one only fires if
-    // this one is not composed.
+    // Back leaves the window instead of closing the terminal: the drawer closes
+    // first, then the screen the window was opened from is shown again with every
+    // tab still attached. The explicit "Close terminal" action in the drawer is
+    // the only thing that ends shells. Compose's BackHandler callbacks run
+    // newest-first, so this one is layered above the chat screen's own handler;
+    // that one only fires if this one is not composed.
     BackHandler {
         if (drawerState.isOpen || drawerState.targetValue != DrawerValue.Closed) {
             drawerScope.launch { drawerState.close() }
         } else {
-            currentOnClose()
+            currentOnLeave()
         }
     }
 
