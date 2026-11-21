@@ -65,6 +65,13 @@ import kotlin.math.pow
 
 private enum class FileAction { Rename, Permissions, Delete }
 
+/**
+ * What the progress bar under the path is describing. `label` names the file and,
+ * for a batch, which one of how many, so a long upload of ten files says which
+ * of them the bar belongs to instead of looking like one endless transfer.
+ */
+private data class Transfer(val label: String, val sent: Long, val total: Long)
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun FilesScreen(
@@ -81,7 +88,7 @@ fun FilesScreen(
     var loading by remember { mutableStateOf(false) }
     var busy by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf("") }
-    var progress by remember { mutableStateOf<Pair<Long, Long>?>(null) }
+    var transfer by remember { mutableStateOf<Transfer?>(null) }
     var newFolder by remember { mutableStateOf(false) }
     var folderName by remember { mutableStateOf("") }
     var selected by remember { mutableStateOf<RemoteFile?>(null) }
@@ -111,18 +118,25 @@ fun FilesScreen(
         }
     }
 
-    val uploadPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
-        if (uri != null) {
-            val name = api.displayName(uri)
+    // One trip for the whole selection: the picker hands over every file that
+    // was ticked, and uploadBatch puts them up one after another, naming each
+    // failure instead of stopping at it.
+    val uploadPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris ->
+        if (uris.isNotEmpty()) {
+            val target = path
             busy = true
-            progress = 0L to -1L
+            transfer = Transfer("", 0L, -1L)
             scope.launch {
-                runCatching {
-                    api.upload(uri, path, name) { done, total -> progress = done to total }
-                }.onFailure { error = it.message ?: "Upload failed" }
+                val items = uris.map { it to api.displayName(it) }
+                val failures = uploadBatch(
+                    items = items,
+                    onProgress = { label, sent, total -> transfer = Transfer(label, sent, total) },
+                    upload = { uri, name, report -> api.upload(uri, target, name, onProgress = report) },
+                )
                 busy = false
-                progress = null
-                load(path)
+                transfer = null
+                if (failures.isNotEmpty()) error = failures.joinToString("\n")
+                load(target)
             }
         }
     }
@@ -130,13 +144,13 @@ fun FilesScreen(
         val file = pendingDownload
         if (uri != null && file != null) {
             busy = true
-            progress = 0L to -1L
+            transfer = Transfer(file.name, 0L, -1L)
             scope.launch {
                 runCatching {
-                    api.download(file.path, uri) { done, total -> progress = done to total }
+                    api.download(file.path, uri) { done, total -> transfer = Transfer(file.name, done, total) }
                 }.onFailure { error = it.message ?: "Download failed" }
                 busy = false
-                progress = null
+                transfer = null
                 pendingDownload = null
             }
         } else pendingDownload = null
@@ -165,7 +179,7 @@ fun FilesScreen(
                         Icon(Icons.Default.CreateNewFolder, contentDescription = "New folder")
                     }
                     IconButton(onClick = { uploadPicker.launch(arrayOf("*/*")) }, enabled = !busy) {
-                        Icon(Icons.Default.UploadFile, contentDescription = "Upload")
+                        Icon(Icons.Default.UploadFile, contentDescription = "Upload files")
                     }
                 },
             )
@@ -199,13 +213,21 @@ fun FilesScreen(
                 Text((listing?.entries?.size ?: 0).toString() + " items", style = MaterialTheme.typography.labelSmall)
             }
             if (busy) {
-                val value = progress
-                if (value != null && value.second > 0L) {
+                val value = transfer
+                if (value != null && value.label.isNotBlank()) {
+                    Text(
+                        value.label,
+                        style = MaterialTheme.typography.labelSmall,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+                if (value != null && value.total > 0L) {
                     LinearProgressIndicator(
-                        progress = { (value.first.toFloat() / value.second).coerceIn(0f, 1f) },
+                        progress = { (value.sent.toFloat() / value.total).coerceIn(0f, 1f) },
                         modifier = Modifier.fillMaxWidth(),
                     )
-                    Text(humanSize(value.first) + " / " + humanSize(value.second), style = MaterialTheme.typography.labelSmall)
+                    Text(humanSize(value.sent) + " / " + humanSize(value.total), style = MaterialTheme.typography.labelSmall)
                 } else {
                     LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
                     Text("Transferring…", style = MaterialTheme.typography.labelSmall)
