@@ -1,16 +1,18 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- The composer's spark: four points off one diamond, drawn in the accent
-     blue the app uses for everything that acts. -->
-<vector xmlns:android="http://schemas.android.com/apk/res/android"
-    android:width="108dp"
-    android:height="108dp"
-    android:viewportWidth="108"
-    android:viewportHeight="108">
-    <path
-        android:fillColor="#7FB2FF"
-        android:pathData="M54,28 L60.5,47.5 L80,54 L60.5,60.5 L54,80 L47.5,60.5 L28,54 L47.5,47.5 Z" />
-    <path
-        android:fillColor="#7FB2FF"
-        android:fillAlpha="0.55"
-        android:pathData="M74,26 L76.6,33.4 L84,36 L76.6,38.6 L74,46 L71.4,38.6 L64,36 L71.4,33.4 Z" />
-</vector>
+<!--
+    The launcher wears the same mark as the bar and the web, from the same
+    drawable rather than a copied set of paths, so the two cannot drift apart.
+
+    The inset keeps the mark's outer ring inside the adaptive icon's 66dp safe
+    zone: the ring spans about 85% of the mark's box, so 16dp on each side of a
+    108dp layer leaves it clear of every launcher mask. The navy behind it is
+    ic_launcher_background, the same recess the surfaces use.
+-->
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <item
+        android:drawable="@drawable/aixodia_mark"
+        android:left="16dp"
+        android:top="16dp"
+        android:right="16dp"
+        android:bottom="16dp" />
+</layer-list>
