@@ -29,6 +29,27 @@ class LauncherIconSnapshots {
     @Test
     fun launcherRoundMark() = launcher(R.drawable.ic_launcher_plate_round)
 
+    /**
+     * The monochrome cut, which the system tints for a themed icon. It is the
+     * emblem alone — the pale disc is left out of it, because a filled disc
+     * tinted in one colour is a plain circle, not a mark.
+     */
+    @Test
+    fun launcherMonochrome() = paparazzi.snapshot {
+        Box(Modifier.size(108.dp), contentAlignment = Alignment.Center) {
+            Image(
+                painter = painterResource(R.drawable.ic_launcher_plate),
+                contentDescription = null,
+                modifier = Modifier.size(108.dp),
+            )
+            Image(
+                painter = painterResource(R.drawable.ic_launcher_monochrome),
+                contentDescription = null,
+                modifier = Modifier.size(108.dp),
+            )
+        }
+    }
+
     private fun launcher(plate: Int) = paparazzi.snapshot {
         Box(Modifier.size(108.dp), contentAlignment = Alignment.Center) {
             Image(

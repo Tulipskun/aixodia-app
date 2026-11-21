@@ -1,9 +1,17 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <!-- Midnight blue: the icon's plate, and the mark's own disc, filled with the
-         same colour so the middle of the icon is not a dark hole. An adaptive
-         icon's layers are drawn on the full 108dp canvas and the launcher masks
-         the middle 72dp, so this is the colour that shows through every mask.
-         scripts/render_brand_icons.py reads it back out to paint the disc. -->
+    <!-- The icon's two colours, and nothing else uses them.
+
+         The plate is the deep blue the icon is built on. The disc is the pale
+         field the mark is drawn on — not the plate's own colour, which is what it
+         used to be: with the plate and the mark's disc the same blue, the ring and
+         the star had nowhere to stand and the icon read as one flat square.
+
+         Contrast: disc against plate 10.3:1, mark against disc 11.8:1. The mark is
+         one colour, drawn in `ic_launcher_background`, so the icon keeps working
+         as the system's tinted monochrome layer and in a single ink.
+         scripts/render_brand_icons.py reads both back out to paint the disc and
+         recolour the mark. -->
     <color name="ic_launcher_background">#143A5E</color>
+    <color name="ic_launcher_disc">#EDF3FB</color>
 </resources>
