@@ -60,8 +60,8 @@ class SettingsStore(private val ctx: Context) {
     private val terminalSessionPids = stringPreferencesKey("terminal_session_pids")
     // Tabs the user closed that the engine still lists. A close is a DELETE the
     // engine may not hear (it is exactly when it is restarting), and the shell
-    // survives that in tmux; this is what makes the retry — and the fact that
-    // the tab must stay gone — outlive the process.
+    // survives that in its holder; this is what makes the retry — and the fact
+    // that the tab must stay gone — outlive the process.
     private val terminalClosedIds = stringPreferencesKey("terminal_closed_ids")
     // The daemon's start time, kept so the header's uptime counter has a number
     // the moment the app opens — before the Engine health check confirms it.

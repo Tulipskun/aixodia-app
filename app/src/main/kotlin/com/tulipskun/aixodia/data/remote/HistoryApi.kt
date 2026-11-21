@@ -1236,8 +1236,9 @@ class HistoryApi(
     }
 
     /**
-     * Sessions the engine still holds, including tmux shells that survived a
-     * restart — and the reason the list is not available when it is not.
+     * Sessions the engine still holds, including shells that outlived an engine
+     * restart in their holders — and the reason the list is not available when it
+     * is not.
      *
      * The terminal has to tell [TerminalShells.Unreachable] apart from an empty
      * list. An engine that is stopped or restarting answers nothing, and opening

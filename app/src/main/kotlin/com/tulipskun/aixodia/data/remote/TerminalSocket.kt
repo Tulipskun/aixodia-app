@@ -118,8 +118,9 @@ data class TabEvent(val sessionId: String, val event: TermEvent)
  * The socket is authenticated with a single-use, short-lived ticket fetched
  * over the normal authenticated HTTP path, so the long-lived API token never
  * appears in a URL. Closing the terminal's tabs (or the process going away)
- * hangs up the streams; the shells themselves stay on the engine (in tmux when
- * available), ready for a replay on the next attach.
+ * hangs up the streams; the shells themselves stay on the engine in a holder of
+ * their own, which outlives the engine, so the next attach lands on the same
+ * shell and gets the screen replayed.
  */
 class TerminalSocket(
     private val settings: SettingsStore,
@@ -647,8 +648,8 @@ class TerminalSocket(
         if (!answered) return false
 
         // The engine still names a shell the user closed, so the close never
-        // reached it — the window for that is an engine restart, and tmux keeps
-        // the shell across one. Retrying here is what stops the closed tab from
+        // reached it — the window for that is an engine restart, and the holder
+        // keeps the shell across one. Retrying here is what stops the closed tab from
         // coming back with the next list, or after the app is restarted. Laid
         // off the caller: a dial must not wait on shells that are on their way
         // out, and the next poll retries whatever a slow DELETE left behind.
@@ -788,7 +789,7 @@ class TerminalSocket(
             settings.removeTerminalSessionId(id)
             if (kill) {
                 // Written before the DELETE is even attempted: if the engine is
-                // restarting the DELETE is lost, and the tmux shell it should
+                // restarting the DELETE is lost, and the held shell it should
                 // have ended would otherwise come back as a tab after the next
                 // list — or after the next launch.
                 settings.addTerminalClosedId(id)
