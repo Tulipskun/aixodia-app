@@ -87,6 +87,9 @@ class SettingsStore(private val ctx: Context) {
     private val enginesJson = stringPreferencesKey("engines_json")
     private val activeEngineId = stringPreferencesKey("active_engine_id")
     private val enginesFetchedAt = stringPreferencesKey("engines_fetched_at")
+    // The folder the file manager was last looking at. It is the machine's path,
+    // not the phone's, and the reader expects to come back to where they were.
+    private val filesPath = stringPreferencesKey("files_path")
 
     /** The footer format for a provider, falling back to the shared default. */
     fun tokenFieldsFlow(provider: String) = ctx.ds.data.map { prefs ->
@@ -116,6 +119,14 @@ class SettingsStore(private val ctx: Context) {
     val endpointFlow: Flow<String> = ctx.ds.data.map { it[endpoint]?.takeIf(String::isNotBlank) ?: DEFAULT_DAEMON_URL }
     val daemonUrlFlow: Flow<String> = ctx.ds.data.map { it[daemonUrl]?.takeIf(String::isNotBlank) ?: DEFAULT_DAEMON_URL }
     val sessionFlow: Flow<String> = ctx.ds.data.map { it[sessionId] ?: "" }
+    /** The folder the file manager opens on: where the reader last was. */
+    val filesPathFlow: Flow<String> = ctx.ds.data.map { it[filesPath]?.takeIf(String::isNotBlank) ?: "/" }
+
+    suspend fun saveFilesPath(path: String) {
+        val clean = path.trim().ifBlank { "/" }
+        ctx.ds.edit { it[filesPath] = clean }
+    }
+
     /** The cached daemon start time (unix second), 0 when never seen. */
     val terminalSessionIdFlow: Flow<String> = ctx.ds.data.map { it[terminalSessionId] ?: "" }
     val terminalSessionIdsFlow: Flow<String> = ctx.ds.data.map { it[terminalSessionIds] ?: "" }

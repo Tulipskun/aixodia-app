@@ -56,6 +56,7 @@ import com.tulipskun.aixodia.data.remote.ClientToken
 import com.tulipskun.aixodia.data.remote.FilesApi
 import com.tulipskun.aixodia.data.remote.RemoteDirectory
 import com.tulipskun.aixodia.data.remote.RemoteFile
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import java.text.DateFormat
 import java.util.Date
@@ -96,7 +97,15 @@ fun FilesScreen(
         error = ""
         scope.launch {
             runCatching { api.list(target) }
-                .onSuccess { listing = it; path = it.path; pathInput = it.path }
+                .onSuccess {
+                    listing = it
+                    path = it.path
+                    pathInput = it.path
+                    // Remembered only once the engine has agreed the path
+                    // exists: a typo that failed to list must not become the
+                    // folder the next open lands in.
+                    settings.saveFilesPath(it.path)
+                }
                 .onFailure { error = it.message ?: "Cannot list folder" }
             loading = false
         }
@@ -133,21 +142,20 @@ fun FilesScreen(
         } else pendingDownload = null
     }
 
-    BackHandler {
-        val parent = listing?.parent
-        if (parent != null) load(parent) else onBack()
-    }
-    LaunchedEffect(Unit) { load("/") }
+    // Back leaves the file manager for the app it was opened from. Walking up
+    // the tree is what the parent-folder arrow in the header is for; a reader
+    // who presses back in a deep folder wants the chat, not the folder above.
+    BackHandler(onBack = onBack)
+    LaunchedEffect(Unit) { load(settings.filesPathFlow.first()) }
 
     Scaffold(
         topBar = {
             TopAppBar(
                 title = { Text("Files") },
                 navigationIcon = {
-                    IconButton(onClick = {
-                        val parent = listing?.parent
-                        if (parent != null) load(parent) else onBack()
-                    }) { Icon(Icons.Default.ArrowBack, contentDescription = "Back") }
+                    IconButton(onClick = onBack) {
+                        Icon(Icons.Default.ArrowBack, contentDescription = "Back")
+                    }
                 },
                 actions = {
                     IconButton(onClick = { load(path) }, enabled = !busy) {
