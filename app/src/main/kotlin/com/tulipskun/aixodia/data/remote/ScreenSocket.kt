@@ -378,16 +378,24 @@ class ScreenSocket(
      * that comes back comes back at the sharpness the reader chose rather than at
      * whatever the engine's default happens to be.
      */
-    fun settings(width: Int? = null, height: Int? = null, fps: Int? = null, tile: Int? = null, quality: Int? = null) {
+    fun settings(
+        width: Int? = null,
+        height: Int? = null,
+        fps: Int? = null,
+        tile: Int? = null,
+        quality: Int? = null,
+        codec: String? = null,
+    ) {
         val parts = buildList {
             width?.let { add("\"width\":$it") }
             height?.let { add("\"height\":$it") }
             fps?.let { add("\"fps\":$it") }
             tile?.let { add("\"tile\":$it") }
             quality?.let { add("\"quality\":$it") }
+            codec?.let { add("\"codec\":\"$it\"") }
         }
         if (parts.isEmpty()) return
-        profile = profile.mergedWith(Profile(width = width, height = height, fps = fps, quality = quality))
+        profile = profile.mergedWith(Profile(width = width, height = height, fps = fps, quality = quality, codec = codec))
         send("""{"type":"settings",${parts.joinToString(",")}}""")
     }
 
@@ -404,6 +412,26 @@ class ScreenSocket(
     fun keepQuality(value: Int) {
         profile = profile.mergedWith(Profile(quality = value))
         scope.launch { settings.saveScreenQuality(value) }
+    }
+
+    /**
+     * Whether the picture travels as tiles or as video, for the next visit.
+     *
+     * A redial repeats the chosen codec through the profile, so switching stays
+     * switched while the engine lasts; the store is what carries it across one.
+     */
+    suspend fun savedCodec(): String? = settings.screenCodec()
+
+    fun keepCodec(name: String) {
+        profile = profile.mergedWith(Profile(codec = name))
+        scope.launch { settings.saveScreenCodec(name) }
+    }
+
+    /** Whether this phone pushes the pointer around or touches the screen. */
+    suspend fun savedInputMode(): String? = settings.screenInputMode()
+
+    fun keepInputMode(value: String) {
+        scope.launch { settings.saveScreenInputMode(value) }
     }
 
     private fun send(text: String) {
@@ -547,6 +575,7 @@ class ScreenSocket(
         val height: Int? = null,
         val fps: Int? = null,
         val quality: Int? = null,
+        val codec: String? = null,
     ) {
         /**
          * Fills in what [later] asks for.
@@ -559,6 +588,7 @@ class ScreenSocket(
             height = later.height ?: height,
             fps = later.fps ?: fps,
             quality = later.quality ?: quality,
+            codec = later.codec ?: codec,
         )
     }
 
@@ -666,6 +696,7 @@ class ScreenSocket(
             profile.height?.let { append("&height=").append(it) }
             profile.fps?.let { append("&fps=").append(it) }
             profile.quality?.let { append("&quality=").append(it) }
+            profile.codec?.let { append("&codec=").append(it) }
         }
 
         /**

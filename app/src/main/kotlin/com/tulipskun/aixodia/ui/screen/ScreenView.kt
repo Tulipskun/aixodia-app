@@ -115,9 +115,13 @@ class ScreenSurface {
  * anchored on the point between the fingers, so a pinch grows the part being
  * looked at rather than the middle of the screen.
  *
- * The gestures a remote desktop needs and a photo viewer does not are kept on
- * their own: a tap is a click, a held press is the right button, and two fingers
- * that move together scroll instead of zooming.
+ * Which of two ways a finger moves the pointer is the reader's choice ([inputMode]),
+ * the same one the VNC viewers offer: the pad, where the arrow moves with the
+ * finger and a tap clicks under the arrow, or the screen itself, where a touch
+ * lands where it is put and a drag drags what is under it. Both keep the
+ * gestures a remote desktop needs and a photo viewer does not: a tap is a click,
+ * two fingers moving together scroll instead of zooming, and a button held from
+ * the panel turns a one-finger drag into a window being carried.
  */
 @SuppressLint("ViewConstructor")
 class ScreenView(context: Context) : View(context) {
@@ -191,6 +195,27 @@ class ScreenView(context: Context) : View(context) {
      */
     var videoMode: Boolean = false
 
+    /**
+     * Whether a finger pushes the pointer or is the pointer.
+     *
+     * The pad is the default because it is the mode that works on a desktop too
+     * big for the phone; touch mode is for one that already fits.
+     */
+    var inputMode: InputMode = InputMode.TRACKPAD
+        set(value) {
+            if (value == field) return
+            field = value
+            // A press the other mode left down would stay down: touch mode leaves
+            // the button held for the whole touch, and the pad never touches it.
+            if (value == InputMode.TRACKPAD) cancelTouchPress()
+        }
+
+    /** True while a touch in touch mode has the machine's button pressed. */
+    private var touchPressed = false
+
+    /** The button the panel is holding down, if any. */
+    private var heldButton: String? = null
+
     /** When the last pointer move was sent, so they are not sent faster than frames. */
     private var lastMoveSent = 0L
     /** True when the newest position has been sent, false while it is only owed. */
@@ -217,6 +242,68 @@ class ScreenView(context: Context) : View(context) {
     fun attach(socket: ScreenSocket, surface: ScreenSurface) {
         this.socket = socket
         this.surface = surface
+    }
+
+    /**
+     * Holds a mouse button down, wherever the pointer is.
+     *
+     * This is the viewer's mouse-button panel: press it, then drag with one
+     * finger to carry the window; let go to drop it. Without it a phone cannot
+     * move a window at all, because a drag needs a button held for longer than a
+     * tap lasts.
+     */
+    fun holdButton(button: String) {
+        val socket = socket ?: return
+        val at = surface?.cursor ?: return
+        heldButton = button
+        socket.down(at.first, at.second, button)
+    }
+
+    /** Lets go of a button the panel is holding, wherever the pointer ended up. */
+    fun releaseButton() {
+        val socket = socket ?: return
+        val button = heldButton ?: return
+        val at = surface?.cursor
+        heldButton = null
+        at?.let { socket.up(it.first, it.second, button) }
+    }
+
+    /** Whether the panel is holding a button down right now. */
+    fun isHoldingButton(): Boolean = heldButton != null
+
+    /** Whether the picture is shown one pixel per pixel already. */
+    fun isActualSize(): Boolean {
+        val picture = surface?.bitmap() ?: return false
+        if (picture.width <= 0 || picture.height <= 0 || width == 0 || height == 0) return false
+        val fit = min(width.toFloat() / picture.width, height.toFloat() / picture.height)
+        if (fit <= 0f) return false
+        return zoom >= (1f / fit).coerceIn(MIN_ZOOM, MAX_ZOOM) - 0.01f
+    }
+
+    /** Scale the picture to fit the view: the whole desktop, small. */
+    fun fitScreen() {
+        zoom = 1f
+        panX = 0f
+        panY = 0f
+        postInvalidateOnAnimation()
+    }
+
+    /**
+     * One picture pixel per screen pixel.
+     *
+     * A fitted 1920-wide desktop on a 1080-wide phone is at 56%, where small text
+     * is unreadable; this is the reader saying "show it real" and panning around.
+     */
+    fun actualSize() {
+        val picture = surface?.bitmap() ?: return
+        if (picture.width <= 0 || picture.height <= 0 || width == 0 || height == 0) return
+        val fit = min(width.toFloat() / picture.width, height.toFloat() / picture.height)
+        if (fit <= 0f) return
+        zoom = (1f / fit).coerceIn(MIN_ZOOM, MAX_ZOOM)
+        panX = 0f
+        panY = 0f
+        clampPan()
+        postInvalidateOnAnimation()
     }
 
     /** Puts a fresh frame on screen. Called from the socket's collector. */
@@ -359,7 +446,6 @@ class ScreenView(context: Context) : View(context) {
 
         when (event.actionMasked) {
             MotionEvent.ACTION_DOWN -> {
-                dropLongPress()
                 downAt = System.currentTimeMillis()
                 downX = event.x
                 downY = event.y
@@ -374,10 +460,15 @@ class ScreenView(context: Context) : View(context) {
                 fingersDown = 1
                 fingersAtStart = 1
                 maxFingers = 1
+                touchPressed = false
                 // A second tap that lands soon after the first is the start of a
                 // double tap, which in this viewer is click-and-hold.
                 secondTap = downAt - lastTapAt <= DOUBLE_TAP_MS
                 lastTapAt = downAt
+                // Touch mode is the screen itself: the press happens where the
+                // finger lands, and it stays pressed until the finger leaves, so
+                // a slow movement is a drag and a quick one is a click.
+                if (inputMode == InputMode.DIRECT) pressDirect(event)
                 // A tap is remembered so a second one can turn it into a double.
                 return true
             }
@@ -386,6 +477,10 @@ class ScreenView(context: Context) : View(context) {
                 fingersDown = event.pointerCount
                 maxFingers = maxOf(maxFingers, event.pointerCount)
                 dragged = false
+                // A second finger means the picture, not the machine: a press
+                // touch mode had already put down is let go rather than left held
+                // through a pinch.
+                cancelTouchPress()
                 if (fingersDown >= 2) {
                     // Two fingers own the picture; the movement done with one is
                     // over, and it never pressed anything — a drag that begins
@@ -410,6 +505,10 @@ class ScreenView(context: Context) : View(context) {
                     moveTwoFingers(event)
                     return true
                 }
+                if (touchPressed) {
+                    moveDirect(event)
+                    return true
+                }
                 moveOneFinger(event)
                 return true
             }
@@ -425,17 +524,17 @@ class ScreenView(context: Context) : View(context) {
             }
 
             MotionEvent.ACTION_UP -> {
-                endOneFinger(event)
+                if (touchPressed) releaseTouchPress(event) else endOneFinger(event)
                 fingersDown = 0
                 return true
             }
 
             MotionEvent.ACTION_CANCEL -> {
-                dropLongPress()
                 if (held) {
                     surface?.cursor?.let { (x, y) -> socket.up(x, y, "left") }
                     held = false
                 }
+                cancelTouchPress()
                 dragged = false
                 pinched = false
                 fingersDown = 0
@@ -443,6 +542,72 @@ class ScreenView(context: Context) : View(context) {
             }
         }
         return true
+    }
+
+    /**
+     * The press that starts a touch-mode gesture.
+     *
+     * Placed under the finger, not at the arrow: in this mode the picture is the
+     * screen, so the touch is the position. The button is the one chosen in the
+     * bar, because a second finger here is a pinch rather than a right-click.
+     */
+    private fun pressDirect(event: MotionEvent) {
+        val socket = socket ?: return
+        val at = pointerFor(event) ?: return
+        touchPressed = true
+        markCursor(at.first, at.second)
+        socket.down(at.first, at.second, "left")
+    }
+
+    /** A touch-mode drag: the pointer follows the finger exactly. */
+    private fun moveDirect(event: MotionEvent) {
+        val socket = socket ?: return
+        val at = pointerFor(event) ?: return
+        if (abs(event.x - downX) > TOUCH_SLOP || abs(event.y - downY) > TOUCH_SLOP) {
+            movedEnough = true
+        }
+        markCursor(at.first, at.second)
+        sendMove(socket, at.first, at.second)
+    }
+
+    /** Ends a touch-mode press where the finger left, not where it began. */
+    private fun releaseTouchPress(event: MotionEvent) {
+        val socket = socket ?: return
+        touchPressed = false
+        pointerSettled = true
+        removeCallbacks(settleRun)
+        val at = pointerFor(event) ?: surface?.cursor ?: return
+        socket.up(at.first, at.second, "left")
+    }
+
+    /** Lets go of a press that a pinch or a mode change interrupted. */
+    private fun cancelTouchPress() {
+        if (!touchPressed) return
+        touchPressed = false
+        pointerSettled = true
+        removeCallbacks(settleRun)
+        val socket = socket ?: return
+        surface?.cursor?.let { (x, y) -> socket.up(x, y, "left") }
+    }
+
+    /**
+     * Sends a pointer move, at most once a frame.
+     *
+     * A held drag reports motion at the touch panel's rate, not the machine's,
+     * and a queue of positions the pointer has already left only adds lag to the
+     * window being dragged. The newest position is always the one sent.
+     */
+    private fun sendMove(socket: ScreenSocket, x: Int, y: Int) {
+        val now = System.currentTimeMillis()
+        if (now - lastMoveSent >= MOVE_INTERVAL_MS) {
+            socket.move(x, y)
+            lastMoveSent = now
+            pointerSettled = true
+        } else {
+            pointerSettled = false
+            settleMove = { socket.move(x, y) }
+            postDelayed(settleRun, MOVE_INTERVAL_MS)
+        }
     }
 
     /**
@@ -470,7 +635,6 @@ class ScreenView(context: Context) : View(context) {
 
         if (abs(event.x - downX) > TOUCH_SLOP || abs(event.y - downY) > TOUCH_SLOP) {
             movedEnough = true
-            dropLongPress()
         }
 
         // The movement since the last event, in the machine's pixels. This is the
@@ -488,26 +652,13 @@ class ScreenView(context: Context) : View(context) {
         markCursor(wantX, wantY)
 
         // Held down for a double-tap-and-drag: the button stays pressed and the
-        // object follows the pointer. The gate applies here too — a held drag
-        // reports motion at the touch panel's rate, not the machine's, and a
-        // queue of positions the pointer has already left only adds lag to the
-        // window being dragged. The last one is always sent on release.
-        val now = System.currentTimeMillis()
-        if (now - lastMoveSent >= MOVE_INTERVAL_MS) {
-            socket.move(wantX, wantY)
-            lastMoveSent = now
-            pointerSettled = true
-        } else {
-            pointerSettled = false
-            settleMove = { socket.move(wantX, wantY) }
-            postDelayed(settleRun, MOVE_INTERVAL_MS)
-        }
+        // object follows the pointer.
+        sendMove(socket, wantX, wantY)
     }
 
     /** A tap clicks at the pointer, never at the finger. */
     private fun endOneFinger(event: MotionEvent) {
         val socket = socket ?: return
-        dropLongPress()
         val at = surface?.cursor
         val now = System.currentTimeMillis()
 
@@ -529,27 +680,18 @@ class ScreenView(context: Context) : View(context) {
         if (isDouble) {
             // The viewer's click-and-hold: press and keep it pressed, so a drag
             // that follows moves the object rather than the pointer.
-            socket.down(at.first, at.second, "left")
+            val button = "left"
+            socket.down(at.first, at.second, button)
             held = true
             secondTap = false
             return
         }
         // Which button a tap clicks is decided by how many fingers made it, not
-        // by how many are left at the end — by then the others have lifted.
-        when (maxFingers) {
-            2 -> {
-                socket.down(at.first, at.second, "right")
-                socket.up(at.first, at.second, "right")
-            }
-            3 -> {
-                socket.down(at.first, at.second, "middle")
-                socket.up(at.first, at.second, "middle")
-            }
-            else -> {
-                socket.down(at.first, at.second, "left")
-                socket.up(at.first, at.second, "left")
-            }
-        }
+        // by how many are left at the end — by then the others have lifted — and
+        // a button the reader chose in the bar wins over the count.
+        val button = PointerPlan.tapButton(maxFingers)
+        socket.down(at.first, at.second, button)
+        socket.up(at.first, at.second, button)
     }
 
     /**
@@ -653,20 +795,7 @@ class ScreenView(context: Context) : View(context) {
         return x to y
     }
 
-    private fun dropLongPress() {
-        // Nothing is posted any more: a long press is not a gesture this viewer
-        // has, because its right click is a two-finger tap.
-    }
-
-    override fun onDetachedFromWindow() {
-        dropLongPress()
-        super.onDetachedFromWindow()
-    }
-
     companion object {
-        /** How long a finger must stay still before it counts as a right-click. */
-        private const val LONG_PRESS_MS = 550L
-
         /** Movement in view pixels before a press becomes a drag. */
         private const val TOUCH_SLOP = 12f
 
@@ -691,11 +820,5 @@ class ScreenView(context: Context) : View(context) {
         /** The arrow's size at 1:1, and the largest it is allowed to grow. */
         private const val CURSOR_SIZE = 14f
         private const val CURSOR_MAX = 30f
-
-        /**
-         * A tap waits this long before it becomes a click, so that the second
-         * half of a double tap is not sent as a click first.
-         */
-        private const val TAP_GRACE_MS = 160L
     }
 }

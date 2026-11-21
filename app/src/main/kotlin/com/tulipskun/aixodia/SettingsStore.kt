@@ -99,6 +99,11 @@ class SettingsStore(private val ctx: Context) {
     // quality on connect, so this only records what this phone chose; without it
     // every revisit opened at whatever the engine's last default was.
     private val screenQuality = intPreferencesKey("screen_quality")
+    // Whether a finger pushes the pointer around or is the pointer, and which
+    // codec the picture uses. Both are choices about this phone's link, so both
+    // are kept here rather than on the engine.
+    private val screenInputMode = stringPreferencesKey("screen_input_mode")
+    private val screenCodec = stringPreferencesKey("screen_codec")
 
     /** The footer format for a provider, falling back to the shared default. */
     fun tokenFieldsFlow(provider: String) = ctx.ds.data.map { prefs ->
@@ -136,6 +141,20 @@ class SettingsStore(private val ctx: Context) {
 
     suspend fun saveScreenQuality(value: Int) {
         ctx.ds.edit { it[screenQuality] = value }
+    }
+
+    /** How a finger becomes the pointer: "trackpad" or "direct". */
+    suspend fun screenInputMode(): String? = ctx.ds.data.first()[screenInputMode]
+
+    suspend fun saveScreenInputMode(value: String) {
+        ctx.ds.edit { it[screenInputMode] = value }
+    }
+
+    /** "jpeg" or "h264"; null leaves the engine's own default alone. */
+    suspend fun screenCodec(): String? = ctx.ds.data.first()[screenCodec]
+
+    suspend fun saveScreenCodec(value: String) {
+        ctx.ds.edit { it[screenCodec] = value }
     }
 
     suspend fun saveFilesPath(path: String) {

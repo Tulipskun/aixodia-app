@@ -4,36 +4,29 @@ import org.junit.Assert.assertEquals
 import org.junit.Test
 
 /**
- * Which mouse button a tap clicks.
+ * Which mouse button a tap clicks, and how a stored input mode is read.
  *
  * The rule is RealVNC's: one finger is the left button, two the right, three the
  * middle. It went wrong once because the count was read when the last finger
  * lifted — by which time the other fingers had already gone — so a two-finger
  * tap arrived as a one-finger tap and clicked left instead of right. These pin
- * the rule to the number of fingers the touch was made with.
+ * the rule to [PointerPlan], which is the code the view actually calls.
  */
 class TapButtonTest {
 
-    /** The button a tap clicks, given how many fingers were down at its widest. */
-    private fun button(fingers: Int): String = when (fingers) {
-        2 -> "right"
-        3 -> "middle"
-        else -> "left"
-    }
-
     @Test
     fun oneFingerClicksLeft() {
-        assertEquals("left", button(1))
+        assertEquals("left", PointerPlan.tapButton(1))
     }
 
     @Test
     fun twoFingersClickRight() {
-        assertEquals("right", button(2))
+        assertEquals("right", PointerPlan.tapButton(2))
     }
 
     @Test
     fun threeFingersClickMiddle() {
-        assertEquals("middle", button(3))
+        assertEquals("middle", PointerPlan.tapButton(3))
     }
 
     @Test
@@ -42,23 +35,28 @@ class TapButtonTest {
         // Reading the count at that moment gives 1, which is how it clicked left.
         val atWidest = 2
         val atLastLift = 1
-        assertEquals("right", button(atWidest))
-        assertEquals("the trap this test exists for", "left", button(atLastLift))
+        assertEquals("right", PointerPlan.tapButton(atWidest))
+        assertEquals("the trap this test exists for", "left", PointerPlan.tapButton(atLastLift))
     }
 
     @Test
-    fun aSlideTooSmallToBeADragStillClicks() {
-        // A finger never lands perfectly still. A few pixels of travel is a tap,
-        // and treating it as a drag is why tapping seemed to do nothing.
-        val slop = 12f
-        val wobble = 6f
-        assertEquals(false, wobble > slop)
+    fun everyButtonTheBarShowsIsOneTheEngineKnows() {
+        // The engine reads "left", "middle" and "right" and treats anything else
+        // as left, so a typo here would be a silent wrong click.
+        assertEquals(listOf("left", "middle", "right"), PointerPlan.BUTTONS)
+        assertEquals("L", PointerPlan.label("left"))
+        assertEquals("M", PointerPlan.label("middle"))
+        assertEquals("R", PointerPlan.label("right"))
     }
 
     @Test
-    fun aRealDragDoesNotClick() {
-        val slop = 12f
-        val travel = 90f
-        assertEquals(true, travel > slop)
+    fun aStoredModeIsReadAndAnUnknownOneIsThePad() {
+        assertEquals(InputMode.TRACKPAD, InputMode.parse("trackpad"))
+        assertEquals(InputMode.DIRECT, InputMode.parse("direct"))
+        // Nothing stored, or something from a version that knew another mode:
+        // the pad is the safe choice, because a stray touch in touch mode lands
+        // on whatever is under the finger.
+        assertEquals(InputMode.TRACKPAD, InputMode.parse(null))
+        assertEquals(InputMode.TRACKPAD, InputMode.parse("joystick"))
     }
 }
