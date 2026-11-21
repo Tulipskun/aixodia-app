@@ -3,7 +3,6 @@ package com.tulipskun.aixodia.ui.snapshots
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -16,13 +15,10 @@ import org.junit.Rule
 import org.junit.Test
 
 /**
- * The launcher's mark on its own recess, at the adaptive icon's full 108dp frame.
- * It must be the same mark the bar and the web show, and its outer ring must stay
- * inside the safe zone so no launcher mask cuts it.
- *
- * Paparazzi cannot inflate a layer-list through painterResource, so this draws
- * the mark the layer-list points at with the same 16dp inset it applies. The
- * layer-list's own reference is checked by resource processing, not here.
+ * The launcher's foreground at the adaptive icon's full 108dp frame, rendered
+ * from the very PNG the launcher uses. That PNG — and the bar's mark — are
+ * generated from the web's public/brand/aixodia-mark.svg, so this snapshot
+ * locks the asset that actually ships rather than a hand-made stand-in.
  */
 class LauncherIconSnapshots {
     @get:Rule
@@ -35,9 +31,9 @@ class LauncherIconSnapshots {
             contentAlignment = Alignment.Center,
         ) {
             Image(
-                painter = painterResource(R.drawable.aixodia_mark),
+                painter = painterResource(R.drawable.ic_launcher_foreground),
                 contentDescription = null,
-                modifier = Modifier.size(108.dp).padding(16.dp),
+                modifier = Modifier.size(108.dp),
             )
         }
     }
