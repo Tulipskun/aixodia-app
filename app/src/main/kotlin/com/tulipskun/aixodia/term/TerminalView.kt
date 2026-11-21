@@ -711,10 +711,17 @@ class TerminalView @JvmOverloads constructor(
                 val color = applyDim(cellFg, attr)
                 val x = col * cellWidth
                 val combining = row.combiningAt(col)
+                // Box drawing, blocks and shades are shapes, not glyphs: a panel
+                // of `─` only reads as a panel when every cell's line meets its
+                // neighbour's, and no font promises that. See CellArt.
+                val art = if (combining == null) CellArt.of(cp, cellWidth, cellHeight) else null
                 // Plain ASCII cells can be drawn a row-run at a time. Wide,
                 // combining, and fallback-font glyphs stay one by one so their
                 // advances cannot drift away from the cell grid.
-                if (combining == null && cp < 0x80 && row.width[col].toInt() == 1) {
+                if (art != null) {
+                    flushRun()
+                    drawArt(canvas, art, x, top, color)
+                } else if (combining == null && cp < 0x80 && row.width[col].toInt() == 1) {
                     // Flush before changing a shared Paint's colour: the run
                     // that is already open still owns the old colour.
                     if (runLen > 0 && (p !== runPaint || color != runColor)) flushRun()
@@ -748,6 +755,24 @@ class TerminalView @JvmOverloads constructor(
             col += maxOf(1, row.width[col].toInt())
         }
         flushRun()
+    }
+
+    private fun drawArt(canvas: Canvas, fills: List<CellArt.Fill>, x: Float, top: Float, color: Int) {
+        val ink = color ushr 24 and 0xFF
+        for (fill in fills) {
+            bgPaint.color = if (fill.alpha >= 1f) {
+                color
+            } else {
+                ((ink * fill.alpha).toInt() shl 24) or (color and 0x00FFFFFF)
+            }
+            canvas.drawRect(
+                x + fill.left,
+                top + fill.top,
+                x + fill.right,
+                top + fill.bottom,
+                bgPaint,
+            )
+        }
     }
 
     private fun paintFor(attr: Int): Paint {
