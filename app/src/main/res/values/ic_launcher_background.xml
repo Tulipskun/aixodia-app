@@ -1,6 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <!-- The app's own recess colour: the icon sits on the same navy every
-         surface in the app is built from. -->
-    <color name="ic_launcher_background">#0B1220</color>
+    <!-- Midnight blue. An adaptive icon's layers are drawn on the full 108dp
+         canvas and the launcher masks the middle 72dp, so this colour is what
+         shows through every mask, and what fills the plate below it. -->
+    <color name="ic_launcher_background">#191970</color>
 </resources>
