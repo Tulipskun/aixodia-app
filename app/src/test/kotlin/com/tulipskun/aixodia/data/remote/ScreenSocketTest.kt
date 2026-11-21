@@ -104,6 +104,39 @@ class ScreenSocketTest {
         assertTrue(buffer.remaining() < 4)
     }
 
+    @Test
+    fun theDialAsksForThePictureThatWasChosen() {
+        // The engine reads these off the upgrade, so a dial that omits the quality
+        // hands back a picture nobody chose. A redial repeats the same request.
+        assertEquals(
+            "ticket=t1&width=1080&fps=12&quality=40",
+            ScreenSocket.queryFor(
+                ScreenSocket.Profile(width = 1080, fps = 12, quality = 40),
+                "t1",
+            ),
+        )
+        // Nothing chosen is nothing asked for: the engine's own default is not
+        // guessed at by sending a number here.
+        assertEquals("ticket=t1", ScreenSocket.queryFor(ScreenSocket.Profile(), "t1"))
+    }
+
+    @Test
+    fun aLaterSettingDoesNotForgetTheEarlierOnes() {
+        // The quality slider sends settings carrying only a quality. If that
+        // replaced the profile, the redial after a dropped link would lose the
+        // size and rate the caller had asked for.
+        val asked = ScreenSocket.Profile(width = 1080, height = 720, fps = 12)
+        val sharper = asked.mergedWith(ScreenSocket.Profile(quality = 80))
+        assertEquals(
+            ScreenSocket.Profile(width = 1080, height = 720, fps = 12, quality = 80),
+            sharper,
+        )
+        assertEquals(
+            ScreenSocket.Profile(width = 600, height = 720, fps = 12, quality = 80),
+            sharper.mergedWith(ScreenSocket.Profile(width = 600)),
+        )
+    }
+
     private fun assertArrayEquals(expected: ByteArray, actual: ByteArray) {
         assertEquals("length", expected.size, actual.size)
         for (i in expected.indices) assertEquals("byte $i", expected[i], actual[i])

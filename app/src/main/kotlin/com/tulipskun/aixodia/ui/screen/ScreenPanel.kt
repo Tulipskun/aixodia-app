@@ -32,6 +32,9 @@ import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.tulipskun.aixodia.data.remote.ScreenSocket
 import kotlin.math.roundToInt
@@ -53,6 +56,7 @@ import kotlin.math.roundToInt
 fun ScreenPanel(
     socket: ScreenSocket,
     baseUrl: String,
+    onLeave: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val state by socket.state.collectAsStateWithLifecycle()
@@ -74,9 +78,29 @@ fun ScreenPanel(
         onDispose { video.stop() }
     }
 
-    DisposableEffect(baseUrl) {
+    // The picture is only worth its bandwidth while someone is looking at it, so
+    // the link follows the app rather than the pane: leaving the app closes it
+    // and the engine stops encoding, and coming back dials again for a whole
+    // frame. That also fixes what a kept-warm socket cannot: a process frozen
+    // for a minute still believes its socket is open, because nothing in it ran
+    // to notice the tunnel was gone.
+    val lifecycle = LocalLifecycleOwner.current.lifecycle
+    DisposableEffect(lifecycle, baseUrl) {
+        val observer = LifecycleEventObserver { _, event ->
+            when (event) {
+                Lifecycle.Event.ON_START -> {
+                    if (socket.state.value == ScreenSocket.State.CLOSED) socket.reconnect()
+                }
+                Lifecycle.Event.ON_STOP -> socket.close()
+                else -> Unit
+            }
+        }
+        lifecycle.addObserver(observer)
         socket.connect(baseUrl)
-        onDispose { socket.close() }
+        onDispose {
+            lifecycle.removeObserver(observer)
+            socket.close()
+        }
     }
 
     LaunchedEffect(socket) {
@@ -84,7 +108,16 @@ fun ScreenPanel(
             when (event) {
                 is ScreenSocket.Event.Ready -> {
                     hello = event.hello
+                    // The engine reports the quality it is encoding at, which is
+                    // its own default until this phone says otherwise. A reader
+                    // who chose a sharpness expects it back on the next visit, so
+                    // it is asked for again when it differs.
+                    val saved = socket.savedQuality()
                     quality = event.hello.quality
+                    if (saved != null && saved != event.hello.quality) {
+                        quality = saved
+                        socket.settings(quality = saved)
+                    }
                     failure = null
                     surface.sizeTo(event.hello.width, event.hello.height)
                     // The engine decides; the client does not ask for video it
@@ -117,6 +150,10 @@ fun ScreenPanel(
                     view?.cleared()
                 }
                 ScreenSocket.Event.Closed -> {
+                    // The redial loop is already running. Dropping the greeting
+                    // puts the spinner back, which is honest: there is no picture
+                    // behind this black rectangle until the next hello.
+                    hello = null
                     surface.clear()
                     view?.cleared()
                 }
@@ -187,16 +224,19 @@ fun ScreenPanel(
         }
         ScreenBar(
             hello = hello,
+            state = state,
             quality = quality,
             keyboard = keyboardShown,
             expanded = showControls,
             socket = socket,
+            onLeave = onLeave,
             onToggle = { showControls = !showControls },
             onKeyboard = { keyboardShown = !keyboardShown },
             onQuality = { value ->
                 quality = value
                 socket.settings(quality = value)
             },
+            onQualitySettled = { socket.keepQuality(quality) },
         )
     }
 }
@@ -213,19 +253,23 @@ private fun Centered(text: String) {
 }
 
 /**
- * The strip under the picture: what the link is doing, and the one control worth
- * having on a phone — how sharp the picture is, for when the link is slow.
+ * The strip under the picture: where back goes, what the link is doing, and the
+ * one control worth having on a phone — how sharp the picture is, for when the
+ * link is slow.
  */
 @Composable
 private fun ScreenBar(
     hello: ScreenSocket.Hello?,
+    state: ScreenSocket.State,
     quality: Int,
     keyboard: Boolean,
     expanded: Boolean,
     socket: ScreenSocket,
+    onLeave: () -> Unit,
     onToggle: () -> Unit,
     onKeyboard: () -> Unit,
     onQuality: (Int) -> Unit,
+    onQualitySettled: () -> Unit,
 ) {
     Column(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp)) {
         Row(
@@ -233,10 +277,29 @@ private fun ScreenBar(
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Text(
-                hello?.let { "${it.width}×${it.height} · ${it.fps}fps" } ?: "connecting…",
-                style = MaterialTheme.typography.labelMedium,
-            )
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                // The screen is opened from an engine card, so the way back is the
+                // engine list — the same place the terminal's back goes, and not
+                // the chat, which is a different thing about the same machine.
+                Text(
+                    "←",
+                    style = MaterialTheme.typography.titleMedium,
+                    modifier = Modifier
+                        .padding(end = 14.dp)
+                        .pointerTap(onLeave, size = 20.dp),
+                )
+                Text(
+                    when {
+                        // A still screen sends nothing, so "open" is the only
+                        // honest word for a link that is up but quiet.
+                        state == ScreenSocket.State.OPEN && hello != null ->
+                            "${hello.width}×${hello.height} · ${hello.fps}fps"
+                        state == ScreenSocket.State.CLOSED -> "not connected"
+                        else -> "connecting…"
+                    },
+                    style = MaterialTheme.typography.labelMedium,
+                )
+            }
             Row(verticalAlignment = Alignment.CenterVertically) {
                 // The keys a phone keyboard does not have: Escape, Tab, arrows,
                 // function keys, and a field that types any language.
@@ -260,6 +323,7 @@ private fun ScreenBar(
             Slider(
                 value = quality.toFloat(),
                 onValueChange = { onQuality(it.roundToInt()) },
+                onValueChangeFinished = onQualitySettled,
                 valueRange = 10f..95f,
                 modifier = Modifier.fillMaxWidth(),
             )

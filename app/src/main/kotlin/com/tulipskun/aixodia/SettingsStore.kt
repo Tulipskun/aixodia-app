@@ -2,6 +2,7 @@ package com.tulipskun.aixodia
 
 import android.content.Context
 import androidx.datastore.preferences.core.edit
+import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import kotlinx.coroutines.flow.Flow
@@ -94,6 +95,10 @@ class SettingsStore(private val ctx: Context) {
     // graph is a history this phone collected, so it outlives both the screen and
     // the process: reopening the app must not start the strip over.
     private val engineReadingsJson = stringPreferencesKey("engine_readings_json")
+    // How sharp the reader wants the machine's screen. The engine reports its own
+    // quality on connect, so this only records what this phone chose; without it
+    // every revisit opened at whatever the engine's last default was.
+    private val screenQuality = intPreferencesKey("screen_quality")
 
     /** The footer format for a provider, falling back to the shared default. */
     fun tokenFieldsFlow(provider: String) = ctx.ds.data.map { prefs ->
@@ -125,6 +130,13 @@ class SettingsStore(private val ctx: Context) {
     val sessionFlow: Flow<String> = ctx.ds.data.map { it[sessionId] ?: "" }
     /** The folder the file manager opens on: where the reader last was. */
     val filesPathFlow: Flow<String> = ctx.ds.data.map { it[filesPath]?.takeIf(String::isNotBlank) ?: "/" }
+
+    /** The quality this phone asked for last, or null when it never chose. */
+    suspend fun screenQuality(): Int? = ctx.ds.data.first()[screenQuality]
+
+    suspend fun saveScreenQuality(value: Int) {
+        ctx.ds.edit { it[screenQuality] = value }
+    }
 
     suspend fun saveFilesPath(path: String) {
         val clean = path.trim().ifBlank { "/" }

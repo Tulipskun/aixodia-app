@@ -253,9 +253,13 @@ fun ChatScreen(
     // system back button has to return here, not leave the app.
     BackHandler(enabled = showSettings) { showSettings = false }
     BackHandler(enabled = showProviders) { showProviders = false }
-    // Back out of the terminal is handled by the window itself (it has a drawer
-    // to close first) and leaves for the engine list; see the branch below.
-    BackHandler(enabled = showScreen) { showScreen = false }
+    // Back out of the machine's screen leaves for the engine list, the same way
+    // the terminal does: both are opened from an engine card, so that card is the
+    // screen behind them. The chat is a different thing about the same machine,
+    // and landing there from a full-screen view reads as being thrown out.
+    BackHandler(enabled = showScreen) {
+        if (onBackToEngines != null) onBackToEngines() else showScreen = false
+    }
     BackHandler(enabled = showBackup) { showBackup = false }
     BackHandler(enabled = showFiles) { showFiles = false }
     // The engines list is the screen the app opens on; when none of the panes
@@ -323,6 +327,7 @@ fun ChatScreen(
         ScreenPanel(
             socket = screenSocket,
             baseUrl = daemonUrl,
+            onLeave = { if (onBackToEngines != null) onBackToEngines() else showScreen = false },
             modifier = Modifier.fillMaxSize(),
         )
         return

@@ -7,6 +7,10 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -149,39 +153,108 @@ class ScreenSocket(
     private val inbox = Channel<ByteArray>(Channel.UNLIMITED)
     private val backlog = AtomicInteger(0)
 
+    /**
+     * Where the link dials, and what it asks for, kept so a dropped one can be
+     * redialled without the caller repeating itself.
+     *
+     * A screen is a live view of a machine that restarts, and a phone that
+     * changes network underneath it. Redialling from the last request rather
+     * than from nothing is what makes the window come back on its own.
+     */
+    private var target: String = ""
+    private var profile: Profile = Profile()
+
+    /**
+     * Which attempt is the live one.
+     *
+     * A redial loop and its socket outlive the call that started them, and a
+     * listener for an old socket must not be able to report on the new one — or
+     * close it. Every dial takes a number, and only the holder of the newest one
+     * may touch the state.
+     */
+    private val attempt = AtomicInteger(0)
+
     enum class State { CLOSED, CONNECTING, OPEN }
 
     /**
      * Dials the engine. `url` is the engine's base address; the ticket is
      * fetched over the ordinary authenticated POST first, because a WebSocket
      * upgrade on Android cannot carry an `Authorization` header.
+     *
+     * The dial keeps trying: the ticket is fetched again for every attempt
+     * because it is single-use, and a link that drops after the picture arrived
+     * is redialled from here rather than left black.
      */
     fun connect(baseUrl: String, profile: Profile = Profile()) {
         close()
-        val endpoint = urlFor(baseUrl)
+        target = baseUrl.trim()
+        this.profile = profile
+        val endpoint = urlFor(target)
         if (endpoint.isBlank()) {
             _state.value = State.CLOSED
             events.trySend(Event.Failed("no engine address"))
             return
         }
         _state.value = State.CONNECTING
+        val mine = attempt.incrementAndGet()
         job = scope.launch {
-            val ticket = ticketFor(baseUrl)
+            dialLoop(endpoint, mine)
+        }
+        decoder = scope.launch { drain() }
+    }
+
+    /** Redials the last address, if there was one. */
+    fun reconnect() {
+        if (target.isBlank()) return
+        connect(target, profile)
+    }
+
+    /**
+     * Dials until the link is open, and again after it drops.
+     *
+     * Two different failures wear the same face here: the engine refusing (its
+     * ticket endpoint down, its screen gone) and the link dying under a picture
+     * that was working. Waiting longer after each refusal is right for the
+     * first; the second is worth retrying at once, because the usual cause is a
+     * restart that has already finished.
+     */
+    private suspend fun CoroutineScope.dialLoop(endpoint: String, mine: Int) {
+        var backoff = FIRST_RETRY_MS
+        while (isActive && attempt.get() == mine) {
+            val ticket = ticketFor(target)
             if (ticket.isNullOrBlank()) {
-                _state.value = State.CLOSED
+                _state.value = State.CONNECTING
                 events.trySend(Event.Failed("the engine refused a screen ticket"))
-                return@launch
+                delay(jitteredBackoff(backoff, kotlin.random.Random.nextDouble()))
+                backoff = minOf(backoff * 2, MAX_RETRY_MS)
+                continue
             }
-            val query = buildString {
-                append("ticket=")
-                append(java.net.URLEncoder.encode(ticket, "UTF-8"))
-                profile.width?.let { append("&width=").append(it) }
-                profile.height?.let { append("&height=").append(it) }
-                profile.fps?.let { append("&fps=").append(it) }
+            // The size, rate and quality the reader chose travel on the dial as
+            // well as in settings, so a redial lands on the same picture the
+            // dropped one was showing.
+            val link = Link(mine)
+            socket = client.newWebSocket(
+                Request.Builder().url("$endpoint?${queryFor(profile, ticket)}").build(),
+                link,
+            )
+            // The engine answers an upgrade with hello at once. A silent socket
+            // is a dead tunnel, not a slow picture.
+            val answered = withTimeoutOrNull(READY_TIMEOUT_MS) { link.ready.await() }
+            if (answered != true) {
+                if (socket === link.webSocket) socket = null
+                link.stop()
+                if (answered == null) events.trySend(Event.Failed("no answer from the engine"))
+                delay(jitteredBackoff(backoff, kotlin.random.Random.nextDouble()))
+                backoff = minOf(backoff * 2, MAX_RETRY_MS)
+                continue
             }
-            val request = Request.Builder().url("$endpoint?$query").build()
-            socket = client.newWebSocket(request, Listener())
-            decoder = scope.launch { drain() }
+            // The picture is up. Everything from here is the link dying under a
+            // working screen, which is the case worth retrying immediately.
+            backoff = FIRST_RETRY_MS
+            link.gone.await()
+            if (!isActive || attempt.get() != mine) return
+            _state.value = State.CONNECTING
+            delay(REDIAL_MS)
         }
     }
 
@@ -230,6 +303,9 @@ class ScreenSocket(
     }
 
     fun close() {
+        // First: nothing this link's listeners do from here is wanted, and a
+        // redial loop still waiting must not open another socket behind us.
+        attempt.incrementAndGet()
         socket?.close(1000, "leaving the screen")
         socket = null
         job?.cancel()
@@ -295,7 +371,13 @@ class ScreenSocket(
         send(message)
     }
 
-    /** Changes the picture without redialling. */
+    /**
+     * Changes the picture without redialling.
+     *
+     * What is asked for here becomes the request a redial repeats, so a link
+     * that comes back comes back at the sharpness the reader chose rather than at
+     * whatever the engine's default happens to be.
+     */
     fun settings(width: Int? = null, height: Int? = null, fps: Int? = null, tile: Int? = null, quality: Int? = null) {
         val parts = buildList {
             width?.let { add("\"width\":$it") }
@@ -305,7 +387,23 @@ class ScreenSocket(
             quality?.let { add("\"quality\":$it") }
         }
         if (parts.isEmpty()) return
+        profile = profile.mergedWith(Profile(width = width, height = height, fps = fps, quality = quality))
         send("""{"type":"settings",${parts.joinToString(",")}}""")
+    }
+
+    /**
+     * How sharp this phone last asked for the picture, or null if it never chose.
+     *
+     * Kept beside the rest of the app's settings rather than in the screen: a
+     * quality that has to be set again on every visit is a control the reader has
+     * to keep reaching for.
+     */
+    suspend fun savedQuality(): Int? = settings.screenQuality()
+
+    /** Records the quality, so the next visit opens at it. */
+    fun keepQuality(value: Int) {
+        profile = profile.mergedWith(Profile(quality = value))
+        scope.launch { settings.saveScreenQuality(value) }
     }
 
     private fun send(text: String) {
@@ -335,12 +433,38 @@ class ScreenSocket(
         }.getOrNull()
     }
 
-    private inner class Listener : WebSocketListener() {
+    /**
+     * One dial, and the two moments the loop waits for: it opened, and it went
+     * away.
+     *
+     * [ready] says the engine answered with hello, which is the difference
+     * between "the tunnel is dead" (retry slowly) and "the picture stopped"
+     * (retry at once). [gone] is released however the link ends, including by
+     * this class, so a loop waiting on it never waits for a socket that is
+     * already closed.
+     */
+    private inner class Link(private val mine: Int) : WebSocketListener() {
+        val ready = CompletableDeferred<Boolean>()
+        val gone = CompletableDeferred<Unit>()
+        @Volatile var webSocket: WebSocket? = null
+
+        /** Whether this dial is still the one the caller is waiting for. */
+        private fun stale(): Boolean = attempt.get() != mine
+
+        fun stop() {
+            webSocket?.cancel()
+            ready.complete(false)
+            gone.complete(Unit)
+        }
+
         override fun onOpen(webSocket: WebSocket, response: Response) {
+            this.webSocket = webSocket
+            if (stale()) return
             _state.value = State.OPEN
         }
 
         override fun onMessage(webSocket: WebSocket, bytes: okio.ByteString) {
+            if (stale()) return
             // A binary message is either a tile frame or a video frame, and which
             // one is told by the header inside it — not by the connection, because
             // the codec can change while it is open. Handed on undecoded: the
@@ -349,6 +473,7 @@ class ScreenSocket(
         }
 
         override fun onMessage(webSocket: WebSocket, text: String) {
+            if (stale()) return
             val parsed = runCatching { JSONObject(text) }.getOrNull() ?: return
             when (parsed.optString("type")) {
                 "hello" -> {
@@ -362,20 +487,35 @@ class ScreenSocket(
                         codec = parsed.optString("codec", "jpeg"),
                     )
                     hello = greeting
+                    ready.complete(true)
                     events.trySend(Event.Ready(greeting))
                 }
-                "error" -> events.trySend(Event.Failed(parsed.optString("reason", "no screen")))
+                "error" -> {
+                    // The engine has nothing to show, and says why once before
+                    // it hangs up. That is not a picture that stopped: it is a
+                    // refusal, and the loop's next try is worth waiting for.
+                    ready.complete(false)
+                    events.trySend(Event.Failed(parsed.optString("reason", "no screen")))
+                }
             }
         }
 
         override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
+            if (stale()) return
             _state.value = State.CLOSED
+            // A refusal before hello is the loop's to handle; after hello the
+            // picture was real and its loss is worth saying out loud.
+            ready.complete(false)
             events.trySend(Event.Failed(t.message ?: "the screen link failed"))
+            gone.complete(Unit)
         }
 
         override fun onClosed(webSocket: WebSocket, code: Int, reason: String) {
+            if (stale()) return
             _state.value = State.CLOSED
+            ready.complete(false)
             events.trySend(Event.Closed)
+            gone.complete(Unit)
         }
     }
 
@@ -393,6 +533,33 @@ class ScreenSocket(
         // arrive on their own; only a whole frame fills them.
         if (frame == null) requestKeyframe()
         return frame
+    }
+
+    /**
+     * Where a client is asked to set the picture; all optional.
+     *
+     * A nested type of the socket rather than a companion's, so it can be named
+     * from outside as `ScreenSocket.Profile` — a class declared inside a
+     * companion is not reachable through the outer name.
+     */
+    data class Profile(
+        val width: Int? = null,
+        val height: Int? = null,
+        val fps: Int? = null,
+        val quality: Int? = null,
+    ) {
+        /**
+         * Fills in what [later] asks for.
+         *
+         * Nothing asked for erases what was already chosen: a settings message
+         * carrying only a quality must not forget the size a redial needs.
+         */
+        fun mergedWith(later: Profile): Profile = Profile(
+            width = later.width ?: width,
+            height = later.height ?: height,
+            fps = later.fps ?: fps,
+            quality = later.quality ?: quality,
+        )
     }
 
     companion object {
@@ -472,15 +639,34 @@ class ScreenSocket(
         )
         }
 
-    /** Where a client is asked to set the picture; all optional. */
-    data class Profile(
-        val width: Int? = null,
-        val height: Int? = null,
-        val fps: Int? = null,
-    )
-
         /** A frame that claims more tiles than the grid could hold is refused. */
         private const val MAX_TILES = 4096
+
+        /** How long the engine has to answer a dial with hello. */
+        private const val READY_TIMEOUT_MS = 10_000L
+
+        /** How long a dropped picture waits for its redial; the engine is usually already back. */
+        private const val REDIAL_MS = 1_000L
+
+        /** The first wait after a refusal, doubled each time it is repeated. */
+        private const val FIRST_RETRY_MS = 2_000L
+
+        private const val MAX_RETRY_MS = 15_000L
+
+        /**
+         * The query a dial carries.
+         *
+         * Shared with the tests on purpose: the engine reads these parameters
+         * off the upgrade — it used to ignore them — so what the app puts here is
+         * the picture it actually gets.
+         */
+        internal fun queryFor(profile: Profile, ticket: String): String = buildString {
+            append("ticket=").append(java.net.URLEncoder.encode(ticket, "UTF-8"))
+            profile.width?.let { append("&width=").append(it) }
+            profile.height?.let { append("&height=").append(it) }
+            profile.fps?.let { append("&fps=").append(it) }
+            profile.quality?.let { append("&quality=").append(it) }
+        }
 
         /**
          * The engine's own default, used only if a frame arrives before `hello`
