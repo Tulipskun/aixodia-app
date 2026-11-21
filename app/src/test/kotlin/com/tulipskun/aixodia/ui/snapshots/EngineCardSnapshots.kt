@@ -48,8 +48,10 @@ class EngineCardSnapshots {
 
     /**
      * A card after a few samples: the three readings over the shape of their own
-     * last minutes. This is the state the screen is in five seconds after it
-     * opens on a reachable engine, and the one that used to be three em dashes.
+     * window. This is the state the screen is in a minute after it opens on a
+     * reachable engine, and the one that used to be three em dashes. Memory and disk
+     * are gigabytes in use over the capacities the engine also reports, which is how
+     * the web says them.
      */
     @Test
     fun engineCardWithReadings() = paparazzi.snapshot {
@@ -60,8 +62,10 @@ class EngineCardSnapshots {
                 onOpen = {},
                 readings = EngineReadings(
                     cpu = listOf(8.0, 22.0, 47.0, 63.0, 31.0, 18.0, 26.0, 41.0, 55.0, 38.0, 24.0, 33.0),
-                    ram = listOf(58.0, 58.0, 59.0, 59.0, 60.0, 61.0, 61.0, 62.0, 62.0, 62.0, 63.0, 62.0),
-                    disk = listOf(50.0, 50.0, 50.0, 50.0, 51.0, 51.0, 51.0, 51.0, 51.0, 51.0, 51.0, 51.0),
+                    ram = listOf(2.1, 2.3, 2.6, 2.9, 3.4, 3.8, 4.1, 4.4, 4.6, 4.7, 4.8, 4.9),
+                    disk = listOf(11.2, 11.2, 11.3, 11.5, 11.5, 11.6, 11.6, 11.7, 11.8),
+                    ramTotalGb = "8",
+                    diskTotalGb = "40",
                 ),
             )
         }

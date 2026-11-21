@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -17,15 +18,19 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Devices
+import androidx.compose.material.icons.filled.Memory
 import androidx.compose.material.icons.filled.MoreHoriz
 import androidx.compose.material.icons.filled.Monitor
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.SdStorage
+import androidx.compose.material.icons.filled.Storage
 import androidx.compose.material.icons.filled.Terminal
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
@@ -48,9 +53,12 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.tulipskun.aixodia.EngineEntry
@@ -62,23 +70,24 @@ import com.tulipskun.aixodia.ui.theme.aixodia
 import com.tulipskun.aixodia.ui.theme.Space
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
-import kotlin.math.roundToInt
 
-/** How often the cards re-read an engine's `/healthz`. */
-private const val HEALTH_MS = 5_000L
+/** How often the cards re-read an engine's `/healthz`: the console's own interval. */
+private const val HEALTH_MS = 20_000L
 
-/** How many readings a graph keeps: four minutes of a five-second sample. */
-private const val SAMPLES = 48
+/** How many readings a graph keeps: the console's window of twenty samples. */
+private const val SAMPLES = 20
 
 /**
- * One engine's last few readings, newest last. Each series is drawn as its own
- * graph, and a series with one point is a dot the card would rather not draw, so
- * the line appears once there is something to compare it with.
+ * One engine's last few readings, newest last — the console's three metrics, kept
+ * in the units it says them in: CPU as a share of the machine, memory and disk as
+ * the gigabytes in use, because that is what the card prints next to the total.
  */
 data class EngineReadings(
     val cpu: List<Double> = emptyList(),
     val ram: List<Double> = emptyList(),
     val disk: List<Double> = emptyList(),
+    val ramTotalGb: String? = null,
+    val diskTotalGb: String? = null,
 ) {
     private fun List<Double>.plus(value: Double?): List<Double> =
         if (value == null) this else (this + value).takeLast(SAMPLES)
@@ -86,8 +95,12 @@ data class EngineReadings(
     fun with(health: Health): EngineReadings =
         EngineReadings(
             cpu = cpu.plus(health.cpuPercent),
-            ram = ram.plus(health.memoryPercent),
-            disk = disk.plus(health.diskPercent),
+            ram = ram.plus(MetricShape.toGb(health.memoryUsedBytes)),
+            disk = disk.plus(MetricShape.toGb(health.diskUsedBytes)),
+            // A capacity is a fact about the machine, not a sample: it stays where
+            // it was when a reply leaves it out rather than flickering to nothing.
+            ramTotalGb = MetricShape.wholeGb(health.memoryTotalBytes) ?: ramTotalGb,
+            diskTotalGb = MetricShape.wholeGb(health.diskTotalBytes) ?: diskTotalGb,
         )
 }
 
@@ -132,7 +145,7 @@ fun EnginesScreen(
     // when somebody asks (opening the screen, pulling refresh), but a graph is
     // history: one reading is a number, not a line. Only engines the gateway
     // reports up are asked, so a card whose light is off does not spend every
-    // five seconds waiting out a timeout.
+    // twenty seconds waiting out a timeout.
     LaunchedEffect(engines, snapshot.value.engines) {
         val listed = snapshot.value.engines
         if (listed.isEmpty()) return@LaunchedEffect
@@ -376,12 +389,40 @@ internal fun EngineCard(
 
         // Band two — three readings, held apart by hairlines the way the
         // console separates its columns. Each one is the value the engine last
-        // reported over the shape of the last four minutes; an engine that has
-        // not answered yet keeps the console's em dash rather than a zero.
-        Row(Modifier.fillMaxWidth()) {
-            MetricCell("CPU", readings?.cpu, first = true)
-            MetricCell("RAM", readings?.ram, first = false)
-            MetricCell("DISK", readings?.disk, first = false)
+        // reported over the shape of its window; an engine that has not answered
+        // yet keeps the console's em dash rather than a zero. Memory and disk are
+        // said as used over whole, which is how the web says them.
+        Row(Modifier.fillMaxWidth().height(IntrinsicSize.Min)) {
+            MetricCell(
+                label = "CPU",
+                icon = Icons.Filled.Memory,
+                series = readings?.cpu.orEmpty(),
+                digits = 0,
+                unit = "%",
+                total = null,
+                ceiling = 100.0,
+                first = true,
+            )
+            MetricCell(
+                label = "RAM",
+                icon = Icons.Filled.Storage,
+                series = readings?.ram.orEmpty(),
+                digits = 1,
+                unit = "GB",
+                total = readings?.ramTotalGb,
+                ceiling = readings?.ramTotalGb?.toDoubleOrNull() ?: 100.0,
+                first = false,
+            )
+            MetricCell(
+                label = "DISK",
+                icon = Icons.Filled.SdStorage,
+                series = readings?.disk.orEmpty(),
+                digits = 1,
+                unit = "GB",
+                total = readings?.diskTotalGb,
+                ceiling = readings?.diskTotalGb?.toDoubleOrNull() ?: 100.0,
+                first = false,
+            )
         }
         // The address is not repeated here: a card is already the engine's
         // name and its state, and the URL is setup, not status.
@@ -419,77 +460,111 @@ internal fun EngineCard(
 }
 
 /**
- * One reading in the metrics strip: a label, the latest value, and the shape of
- * the last few minutes under it, with a hairline down its leading edge. A series
- * that has not been sampled yet is the console's em dash and an empty field — no
- * number is invented to fill the space.
+ * One reading in the metrics strip, drawn the way the console draws it: an icon and
+ * a name on one line, the number under them with its unit set smaller, and the
+ * shape of the window as a texture beneath both. The number is the measurement; the
+ * chart only says how the machine has been behaving.
  */
 @Composable
-private fun RowScope.MetricCell(label: String, series: List<Double>?, first: Boolean) {
-    val points = series.orEmpty()
+private fun RowScope.MetricCell(
+    label: String,
+    icon: ImageVector,
+    series: List<Double>,
+    digits: Int,
+    unit: String,
+    total: String?,
+    ceiling: Double,
+    first: Boolean,
+) {
+    val (value, suffix) = MetricShape.reading(series, digits, unit, total)
     Row(Modifier.weight(1f)) {
         if (!first) {
             Box(
                 Modifier
                     .padding(end = Space.s3)
                     .width(1.dp)
-                    .height(52.dp)
+                    .fillMaxHeight()
                     .background(MaterialTheme.aixodia.line),
             )
         }
         Column(Modifier.weight(1f)) {
-            Text(
-                label,
-                style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                fontFamily = FontFamily.Monospace,
-                maxLines = 1,
-            )
-            Text(
-                points.lastOrNull()?.let { it.roundToInt().toString() + "%" } ?: "—",
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurface,
-                fontFamily = FontFamily.Monospace,
-                maxLines = 1,
-            )
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(
+                    icon, contentDescription = null,
+                    modifier = Modifier.size(13.dp),
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Spacer(Modifier.size(Space.s1))
+                Text(
+                    label,
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    fontFamily = FontFamily.Monospace,
+                    maxLines = 1,
+                )
+            }
             Spacer(Modifier.height(Space.s1))
-            Sparkline(points, Modifier.fillMaxWidth().height(16.dp))
+            Row {
+                Text(
+                    value,
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    fontFamily = FontFamily.Monospace,
+                    maxLines = 1,
+                )
+                if (suffix.isNotBlank()) {
+                    Text(
+                        suffix,
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        fontFamily = FontFamily.Monospace,
+                        maxLines = 1,
+                        modifier = Modifier.padding(start = Space.s1),
+                    )
+                }
+            }
+            Spacer(Modifier.height(Space.s1))
+            Sparkline(series, ceiling, Modifier.fillMaxWidth().height(18.dp))
         }
+        Spacer(Modifier.size(Space.s3))
     }
 }
 
 /**
- * The shape of a series, newest at the right. It is drawn on a fixed 0–100 scale
- * and a fixed window of [SAMPLES], so a graph does not restretch as it fills and
- * two cards can be compared by eye: the line starts at the right edge and walks
- * left, and the whole strip means the same span of time on every card.
+ * The shape of a series, oldest at the left, in the console's geometry: scaled to
+ * its own window with a floor on the span, so a machine holding steady is a flat
+ * line and not a cliff. A single sample is a level line, and nothing sampled is no
+ * line at all.
  */
 @Composable
-private fun Sparkline(series: List<Double>, modifier: Modifier) {
+private fun Sparkline(series: List<Double>, ceiling: Double, modifier: Modifier) {
     val ink = MaterialTheme.colorScheme.primary
+    val geometry = MetricShape.points(series, ceiling)
     Canvas(modifier) {
-        // One reading has no shape: a dot would be mistaken for a flat line, so
-        // the cell keeps only the number until there is a second point.
-        if (series.size < 2) return@Canvas
-        val step = size.width / (SAMPLES - 1).toFloat()
-        val baseline = size.height
-        fun x(index: Int): Float = size.width - (series.size - 1 - index) * step
-        fun y(index: Int): Float =
-            size.height - (series[index].coerceIn(0.0, 100.0) / 100.0 * size.height).toFloat()
+        if (geometry.size < 2) return@Canvas
+        fun x(point: Pair<Double, Double>): Float = (point.first / 100.0 * size.width).toFloat()
+        fun y(point: Pair<Double, Double>): Float = (point.second / 100.0 * size.height).toFloat()
 
-        val path = Path()
-        for (index in series.indices) {
-            if (index == 0) path.moveTo(x(0), y(0)) else path.lineTo(x(index), y(index))
+        val line = Path()
+        geometry.forEachIndexed { index, point ->
+            if (index == 0) line.moveTo(x(point), y(point)) else line.lineTo(x(point), y(point))
         }
-
+        // The area stops at the chart's own floor, not at the cell's edge, so the
+        // line keeps the margins the geometry gave it.
+        val floor = (MetricShape.FLOOR / 100.0 * size.height).toFloat()
         val area = Path().apply {
-            addPath(path)
-            lineTo(x(series.size - 1), baseline)
-            lineTo(x(0), baseline)
+            addPath(line)
+            lineTo(x(geometry.last()), floor)
+            lineTo(x(geometry.first()), floor)
             close()
         }
-        drawPath(area, ink.copy(alpha = 0.16f))
-        drawPath(path, ink, style = Stroke(width = 1.5.dp.toPx()))
+        drawPath(area, ink.copy(alpha = 0.14f))
+        drawPath(
+            line,
+            ink.copy(alpha = 0.62f),
+            style = Stroke(width = 1.25.dp.toPx(), cap = StrokeCap.Round, join = StrokeJoin.Round),
+        )
     }
 }
 

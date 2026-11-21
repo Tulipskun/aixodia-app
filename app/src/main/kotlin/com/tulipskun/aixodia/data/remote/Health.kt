@@ -18,6 +18,8 @@ data class Health(
     val memoryUsedBytes: Long? = null,
     val memoryTotalBytes: Long? = null,
     val diskPercent: Double? = null,
+    val diskUsedBytes: Long? = null,
+    val diskTotalBytes: Long? = null,
     val uptimeSeconds: Double? = null,
 ) {
     /** Nothing worth drawing: the reply was an engine's, but its host said nothing. */
@@ -41,6 +43,8 @@ data class Health(
                 memoryUsedBytes = body.bytes("memory_used_bytes"),
                 memoryTotalBytes = body.bytes("memory_total_bytes"),
                 diskPercent = body.percent("disk_percent"),
+                diskUsedBytes = body.bytes("disk_used_bytes"),
+                diskTotalBytes = body.bytes("disk_total_bytes"),
                 uptimeSeconds = body.number("uptime_seconds"),
             )
         }
