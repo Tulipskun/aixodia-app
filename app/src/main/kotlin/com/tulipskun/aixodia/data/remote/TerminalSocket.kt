@@ -1,5 +1,6 @@
 package com.tulipskun.aixodia.data.remote
 
+import android.os.SystemClock
 import android.util.Log
 import com.tulipskun.aixodia.SettingsStore
 import com.tulipskun.aixodia.term.TerminalModes
@@ -62,6 +63,17 @@ private const val READY_TIMEOUT = 10_000L
  * app may still be holding the old one when the window opens.
  */
 private const val DAEMON_RECHECK_MS = 30_000L
+
+/**
+ * How long the app may be off screen before its terminal sockets are re-dialed on
+ * the way back. Android freezes a backgrounded process, socket included: the
+ * WebSocket underneath a tab can be dead for minutes while OkHttp still reports
+ * it open, and nothing in the app ever asks it again — pings need a running
+ * process too. A tab left in that state is a shell the user cannot type into and
+ * cannot get back to, which reads as a session that failed to reconnect. Re-dialing
+ * attaches the same session id to the same shell; the engine replays the screen.
+ */
+private const val REATTACH_AFTER_MS = 30_000L
 
 /** Where the terminal window stands, for the header line. */
 enum class TermState { CLOSED, CONNECTING, OPEN, ENDED }
@@ -198,6 +210,9 @@ class TerminalSocket(
     @Volatile
     private var appVisible = true
 
+    /** When the app last went off screen; 0 while it is on it. */
+    private var hiddenAt = 0L
+
     // Whether an empty tab list should start a fresh shell. Opening the window
     // (and losing every shell) does; closing the last tab on purpose does not,
     // because that screen is showing its finished state and offers "open new".
@@ -303,16 +318,26 @@ class TerminalSocket(
      * The activity came on or went off screen. Backgrounding must not hang up
      * anything: the foreground service keeps the process and every tab's
      * WebSocket alive, so returning to the app is instant. It only stops the
-     * five-second tab-list poll while nobody can see the list.
+     * tab-list poll while nobody can see the list.
+     *
+     * A trip long enough for the system to freeze the process is the one case
+     * where the sockets cannot be trusted: they are re-dialed on the way back,
+     * because a frozen socket neither fails nor answers, and a tab stuck in that
+     * state is a shell the user has lost.
      */
     fun setAppVisible(visible: Boolean) {
         appVisible = visible
         if (!visible) {
             refreshJob?.cancel()
             refreshJob = null
-        } else if (wanted) {
-            refreshSessions()
+            hiddenAt = SystemClock.elapsedRealtime()
+            return
         }
+        val away = if (hiddenAt > 0L) SystemClock.elapsedRealtime() - hiddenAt else 0L
+        hiddenAt = 0L
+        if (!wanted) return
+        if (away >= REATTACH_AFTER_MS) reconnect()
+        refreshSessions()
     }
 
     /**

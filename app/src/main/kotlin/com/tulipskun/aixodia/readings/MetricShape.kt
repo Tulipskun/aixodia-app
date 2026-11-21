@@ -1,4 +1,4 @@
-package com.tulipskun.aixodia.ui.engines
+package com.tulipskun.aixodia.readings
 
 import java.util.Locale
 import kotlin.math.max

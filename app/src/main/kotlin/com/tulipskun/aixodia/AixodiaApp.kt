@@ -9,6 +9,7 @@ import com.tulipskun.aixodia.data.remote.EngineDirectory
 import com.tulipskun.aixodia.data.remote.HistoryApi
 import com.tulipskun.aixodia.data.remote.RunSocket
 import com.tulipskun.aixodia.data.repo.ChatRepository
+import com.tulipskun.aixodia.readings.EngineReadingsStore
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -34,6 +35,9 @@ class AixodiaApp : Application() {
         // reads the current one in the background, so the switcher is fresh by
         // the first time it is opened and still works when it is not.
         container.refreshEngines()
+        // Likewise the charts: an engine card that opens on an empty strip after
+        // every restart is a card that forgot what it had already seen.
+        container.loadReadings()
     }
 }
 
@@ -54,6 +58,14 @@ class AppContainer(app: Application) {
     val repo = ChatRepository(db, historyApi, chat)
     val discovery = DaemonDiscovery(settings, historyApi, chat, scope)
     val engines = EngineDirectory(settings)
+    // The windows behind the cards' charts. Loaded from disk once, so a restart
+    // opens on the same strips instead of an empty one that fills in from now.
+    val readings = EngineReadingsStore(settings)
+
+    /** Reads the stored readings without holding up the first screen. */
+    fun loadReadings() {
+        scope.launch { readings.load() }
+    }
 
     /** Reads the gateway's engine list without holding up the first screen. */
     fun refreshEngines() {

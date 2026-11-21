@@ -90,6 +90,10 @@ class SettingsStore(private val ctx: Context) {
     // The folder the file manager was last looking at. It is the machine's path,
     // not the phone's, and the reader expects to come back to where they were.
     private val filesPath = stringPreferencesKey("files_path")
+    // The windows behind the engine cards' charts, as JSON keyed by engine id. A
+    // graph is a history this phone collected, so it outlives both the screen and
+    // the process: reopening the app must not start the strip over.
+    private val engineReadingsJson = stringPreferencesKey("engine_readings_json")
 
     /** The footer format for a provider, falling back to the shared default. */
     fun tokenFieldsFlow(provider: String) = ctx.ds.data.map { prefs ->
@@ -160,6 +164,16 @@ class SettingsStore(private val ctx: Context) {
             activeId = prefs[activeEngineId].orEmpty(),
             fetchedAt = prefs[enginesFetchedAt]?.toLongOrNull() ?: 0L,
         )
+    }
+
+    /**
+     * Reads the window [saveEngineReadings] wrote, or the empty string.
+     */
+    suspend fun engineReadings(): String = ctx.ds.data.first()[engineReadingsJson].orEmpty()
+
+    /** Replaces the stored windows. Throttled by its caller, not here. */
+    suspend fun saveEngineReadings(json: String) {
+        ctx.ds.edit { it[engineReadingsJson] = json }
     }
 
     /**

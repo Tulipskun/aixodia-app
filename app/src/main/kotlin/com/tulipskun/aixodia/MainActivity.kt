@@ -49,6 +49,7 @@ class MainActivity : ComponentActivity() {
                     if (pane == null) {
                         EnginesScreen(
                             engines = c.engines,
+                            readings = c.readings,
                             onOpen = { _, _, chosen -> openedPane.value = chosen },
                             onOpenSettings = { openedPane.value = "settings" },
                         )

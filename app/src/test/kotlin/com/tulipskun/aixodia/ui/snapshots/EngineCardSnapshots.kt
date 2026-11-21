@@ -3,7 +3,7 @@ package com.tulipskun.aixodia.ui.snapshots
 import app.cash.paparazzi.Paparazzi
 import com.tulipskun.aixodia.EngineEntry
 import com.tulipskun.aixodia.ui.engines.EngineCard
-import com.tulipskun.aixodia.ui.engines.EngineReadings
+import com.tulipskun.aixodia.readings.EngineReadings
 import com.tulipskun.aixodia.ui.theme.AIxodiaTheme
 import org.junit.Rule
 import org.junit.Test

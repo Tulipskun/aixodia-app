@@ -45,7 +45,8 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.rememberDrawerState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.mutableStateMapOf
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -67,6 +68,9 @@ import androidx.lifecycle.repeatOnLifecycle
 import com.tulipskun.aixodia.EngineEntry
 import com.tulipskun.aixodia.data.remote.EngineDirectory
 import com.tulipskun.aixodia.data.remote.Health
+import com.tulipskun.aixodia.readings.EngineReadings
+import com.tulipskun.aixodia.readings.EngineReadingsStore
+import com.tulipskun.aixodia.readings.MetricShape
 import com.tulipskun.aixodia.ui.display.ConsoleBar
 import com.tulipskun.aixodia.ui.display.ScreenHead
 import com.tulipskun.aixodia.ui.theme.aixodia
@@ -76,36 +80,6 @@ import kotlinx.coroutines.launch
 
 /** How often the cards re-read an engine's `/healthz`. */
 private const val HEALTH_MS = 2_000L
-
-/** How many readings a graph keeps: [SAMPLES] samples of [HEALTH_MS] is two minutes. */
-private const val SAMPLES = 60
-
-/**
- * One engine's last few readings, newest last — the console's three metrics, kept
- * in the units it says them in: CPU as a share of the machine, memory and disk as
- * the gigabytes in use, because that is what the card prints next to the total.
- */
-data class EngineReadings(
-    val cpu: List<Double> = emptyList(),
-    val ram: List<Double> = emptyList(),
-    val disk: List<Double> = emptyList(),
-    val ramTotalGb: String? = null,
-    val diskTotalGb: String? = null,
-) {
-    private fun List<Double>.plus(value: Double?): List<Double> =
-        if (value == null) this else (this + value).takeLast(SAMPLES)
-
-    fun with(health: Health): EngineReadings =
-        EngineReadings(
-            cpu = cpu.plus(health.cpuPercent),
-            ram = ram.plus(MetricShape.toGb(health.memoryUsedBytes)),
-            disk = disk.plus(MetricShape.toGb(health.diskUsedBytes)),
-            // A capacity is a fact about the machine, not a sample: it stays where
-            // it was when a reply leaves it out rather than flickering to nothing.
-            ramTotalGb = MetricShape.wholeGb(health.memoryTotalBytes) ?: ramTotalGb,
-            diskTotalGb = MetricShape.wholeGb(health.diskTotalBytes) ?: diskTotalGb,
-        )
-}
 
 /**
  * The first screen: the engines the gateway knows about.
@@ -124,6 +98,7 @@ data class EngineReadings(
 @Composable
 fun EnginesScreen(
     engines: EngineDirectory,
+    readings: EngineReadingsStore,
     onOpen: (EngineEntry, EngineDirectory.Probe, String) -> Unit,
     onOpenSettings: () -> Unit,
 ) {
@@ -132,9 +107,9 @@ fun EnginesScreen(
     val snapshot = remember { mutableStateOf(EngineDirectory.Snapshot(emptyList(), "", 0)) }
     val loading = remember { mutableStateOf(true) }
     val message = remember { mutableStateOf("") }
-    // What each card's strip draws. Keyed by engine id and replaced whole on
-    // every sample, so a graph redraws from one readable value.
-    val readings = remember { mutableStateMapOf<String, EngineReadings>() }
+    // What each card's strip draws. The windows belong to the app, not to this
+    // screen: leaving the list for a thread and coming back must not empty them.
+    val windows by readings.byEngine.collectAsState()
 
     suspend fun reload() {
         loading.value = true
@@ -159,7 +134,7 @@ fun EnginesScreen(
                 for (engine in listed) {
                     if (!engine.online) continue
                     val health = engines.health(engine.url) ?: continue
-                    readings[engine.id] = (readings[engine.id] ?: EngineReadings()).with(health)
+                    readings.record(engine.id, health)
                 }
                 delay(HEALTH_MS)
             }
@@ -260,7 +235,7 @@ fun EnginesScreen(
                     EngineCard(
                         engine = engine,
                         busy = message.value == engine.id,
-                        readings = readings[engine.id],
+                        readings = windows[engine.id],
                         onOpen = { pane ->
                             message.value = engine.id
                             scope.launch {

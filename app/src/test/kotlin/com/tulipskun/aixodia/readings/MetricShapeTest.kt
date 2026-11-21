@@ -1,4 +1,4 @@
-package com.tulipskun.aixodia.ui.engines
+package com.tulipskun.aixodia.readings
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
