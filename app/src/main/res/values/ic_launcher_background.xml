@@ -1,7 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <!-- Midnight blue. An adaptive icon's layers are drawn on the full 108dp
-         canvas and the launcher masks the middle 72dp, so this colour is what
-         shows through every mask, and what fills the plate below it. -->
-    <color name="ic_launcher_background">#191970</color>
+    <!-- Midnight blue: the icon's plate, and the mark's own disc, filled with the
+         same colour so the middle of the icon is not a dark hole. An adaptive
+         icon's layers are drawn on the full 108dp canvas and the launcher masks
+         the middle 72dp, so this is the colour that shows through every mask.
+         scripts/render_brand_icons.py reads it back out to paint the disc. -->
+    <color name="ic_launcher_background">#143A5E</color>
 </resources>
