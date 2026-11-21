@@ -61,6 +61,9 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.repeatOnLifecycle
 import com.tulipskun.aixodia.EngineEntry
 import com.tulipskun.aixodia.data.remote.EngineDirectory
 import com.tulipskun.aixodia.data.remote.Health
@@ -71,11 +74,11 @@ import com.tulipskun.aixodia.ui.theme.Space
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
-/** How often the cards re-read an engine's `/healthz`: the console's own interval. */
-private const val HEALTH_MS = 20_000L
+/** How often the cards re-read an engine's `/healthz`. */
+private const val HEALTH_MS = 2_000L
 
-/** How many readings a graph keeps: the console's window of twenty samples. */
-private const val SAMPLES = 20
+/** How many readings a graph keeps: [SAMPLES] samples of [HEALTH_MS] is two minutes. */
+private const val SAMPLES = 60
 
 /**
  * One engine's last few readings, newest last — the console's three metrics, kept
@@ -145,17 +148,21 @@ fun EnginesScreen(
     // when somebody asks (opening the screen, pulling refresh), but a graph is
     // history: one reading is a number, not a line. Only engines the gateway
     // reports up are asked, so a card whose light is off does not spend every
-    // twenty seconds waiting out a timeout.
+    // sample waiting out a timeout, and the timer only runs while the screen is
+    // the one being looked at: a phone in a pocket has no cards to keep current.
+    val lifecycle = LocalLifecycleOwner.current
     LaunchedEffect(engines, snapshot.value.engines) {
         val listed = snapshot.value.engines
         if (listed.isEmpty()) return@LaunchedEffect
-        while (true) {
-            for (engine in listed) {
-                if (!engine.online) continue
-                val health = engines.health(engine.url) ?: continue
-                readings[engine.id] = (readings[engine.id] ?: EngineReadings()).with(health)
+        lifecycle.repeatOnLifecycle(Lifecycle.State.RESUMED) {
+            while (true) {
+                for (engine in listed) {
+                    if (!engine.online) continue
+                    val health = engines.health(engine.url) ?: continue
+                    readings[engine.id] = (readings[engine.id] ?: EngineReadings()).with(health)
+                }
+                delay(HEALTH_MS)
             }
-            delay(HEALTH_MS)
         }
     }
 
@@ -424,23 +431,12 @@ internal fun EngineCard(
                 first = false,
             )
         }
-        // The address is not repeated here: a card is already the engine's
-        // name and its state, and the URL is setup, not status.
-        val caption = listOfNotNull(
-            engine.tag.takeIf { it.isNotBlank() },
-            engine.version.takeIf { it.isNotBlank() },
-        ).joinToString(" · ")
-        if (caption.isNotBlank()) {
-            Spacer(Modifier.height(Space.s2))
-            Text(
-                caption,
-                style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                fontFamily = FontFamily.Monospace,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-        }
+// An engine's readings are cheap — the endpoint reads the host's own counters —
+        // so the phone samples them faster than the console's idle browser does. A
+        // card on a phone is looked at for a few seconds, and a number that is
+        // twenty seconds old reads as stale. Nothing else is polled at this rate:
+        // the list is still fetched only when somebody asks.
+        Spacer(Modifier.height(Space.s2))
 
         // Band three — what you can do. Four peers, none filled: the same
         // icon-above-label action the console draws. The first three open a
