@@ -530,7 +530,13 @@ class ScreenView(context: Context) : View(context) {
             }
 
             MotionEvent.ACTION_MOVE -> {
-                if (fingersDown >= 2) {
+                // What this event carries, not how many fingers the gesture
+                // began with. `fingersDown` is left at its old value when one
+                // finger of a pinch lifts, on purpose, so the lift is not
+                // mistaken for a tap — and a batched move after that lift
+                // carries one pointer, which the two-finger path then read at
+                // index one and crashed with "pointer index out of range".
+                if (PointerPlan.carriesTwo(event.pointerCount)) {
                     moveTwoFingers(event)
                     return true
                 }
@@ -807,6 +813,9 @@ class ScreenView(context: Context) : View(context) {
      * happened to hand over together.
      */
     private fun moveTwoFingers(event: MotionEvent) {
+        // The lift of one finger of a pinch lands here with a single pointer:
+        // nothing to pinch with, and index one would throw.
+        if (!PointerPlan.carriesTwo(event.pointerCount)) return
         for (i in 0 until event.historySize) {
             twoFingerSample(
                 event.getHistoricalX(0, i), event.getHistoricalY(0, i),

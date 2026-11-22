@@ -1,6 +1,7 @@
 package com.tulipskun.aixodia.ui.screen
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -221,5 +222,17 @@ class PointerPlanTest {
         )
         window.reset()
         assertEquals(0f, window.measure(400, x = 900f, y = 0f), 0f)
+    }
+
+    @Test
+    fun a_single_pointer_is_not_a_pinch() {
+        // The crash this pins: one finger of a two-finger gesture lifts, and the
+        // next batched move carries one pointer. Reading index one of it threw
+        // "pointer index out of range" and took the app down from inside input
+        // dispatch.
+        assertTrue(PointerPlan.carriesTwo(2))
+        assertTrue(PointerPlan.carriesTwo(3))
+        assertFalse(PointerPlan.carriesTwo(1))
+        assertFalse(PointerPlan.carriesTwo(0))
     }
 }

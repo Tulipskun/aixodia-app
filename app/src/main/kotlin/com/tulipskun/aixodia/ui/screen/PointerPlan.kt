@@ -192,6 +192,16 @@ object Pinch {
 }
 
 object PointerPlan {
+    /**
+     * Whether an event carries enough pointers to pinch, pan or scroll with.
+     *
+     * Not the same question as "how many fingers is this gesture" — the gesture
+     * keeps its count after a finger lifts, which is what stops a two-finger
+     * click from being read as a tap. An event is a single instant, and its
+     * pointer count is all it has.
+     */
+    fun carriesTwo(pointers: Int): Boolean = pointers >= 2
+
     /** The buttons the bar offers, in the order it shows them. */
     val BUTTONS: List<String> = listOf("left", "middle", "right")
 
