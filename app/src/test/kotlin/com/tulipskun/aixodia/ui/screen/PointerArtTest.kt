@@ -48,4 +48,39 @@ class PointerArtTest {
         assertEquals(PointerArt.MAX_SIZE, PointerArt.size(9f, 9f), 0f)
         assertTrue(PointerArt.size(2f, 2f) > PointerArt.SIZE)
     }
+
+    @Test
+    fun a_cursor_bitmap_hangs_its_hot_spot_on_the_pointer() {
+        // Measured from the engine's display: the arrow is a 24x24 cursor whose
+        // hot spot is (3, 1), and an xterm's I-beam is 9x16 with its hot spot in
+        // the middle of its top edge. The pixel that clicks must be the pixel
+        // under the hot spot, or every tap lands a few pixels away.
+        val arrow = PointerArt.bitmapRect(
+            pointerX = 400f,
+            pointerY = 300f,
+            width = 24,
+            height = 24,
+            hotX = 3,
+            hotY = 1,
+            scale = 1f,
+        )
+        assertEquals(400f - 3, arrow.left, 0f)
+        assertEquals(300f - 1, arrow.top, 0f)
+        assertEquals(24f, arrow.width, 0f)
+
+        val iBeam = PointerArt.bitmapRect(400f, 300f, 9, 16, 4, 8, 1f)
+        assertEquals(396f, iBeam.left, 0f)
+        assertEquals(292f, iBeam.top, 0f)
+    }
+
+    @Test
+    fun a_zoomed_picture_grows_the_cursor_and_a_fitted_one_does_not_shrink_it() {
+        // A fitted desktop is drawn at about 70%, which would make a 24 pixel
+        // cursor 17 pixels of smudge.
+        val shrunk = PointerArt.bitmapRect(0f, 0f, 24, 24, 0, 0, 0.7f)
+        assertEquals(24f, shrunk.width, 0f)
+        val zoomed = PointerArt.bitmapRect(0f, 0f, 24, 24, 0, 0, 2f)
+        assertEquals(48f, zoomed.width, 0f)
+        assertEquals(48f, zoomed.height, 0f)
+    }
 }

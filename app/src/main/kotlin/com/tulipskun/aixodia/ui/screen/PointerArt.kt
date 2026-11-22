@@ -54,6 +54,30 @@ object PointerArt {
     /** The rim width that goes with a sprite of [size] view pixels. */
     fun rim(size: Float): Float = RIM * (size / SIZE)
 
+    /**
+     * Where a cursor bitmap is drawn, given the pointer's place on screen.
+     *
+     * The hot spot — the pixel of the image that *is* the pointer — goes on the
+     * pointer, and the rest of the image hangs around it. The image is scaled
+     * with the picture so it looks the size the desktop drew it, but never below
+     * its own pixels: a fitted picture would otherwise shrink an I-beam to a
+     * smudge.
+     */
+    fun bitmapRect(
+        pointerX: Float,
+        pointerY: Float,
+        width: Int,
+        height: Int,
+        hotX: Int,
+        hotY: Int,
+        scale: Float,
+    ): FloatBox {
+        val drawn = max(1f, scale)
+        val left = pointerX - hotX * drawn
+        val top = pointerY - hotY * drawn
+        return FloatBox(left, top, width * drawn, height * drawn)
+    }
+
     /** The arrow, with its tip on ([x], [y]). */
     fun path(x: Float, y: Float, size: Float): Path = Path().apply {
         val first = OUTLINE.first()

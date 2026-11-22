@@ -15,7 +15,6 @@ import kotlin.math.abs
 import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.roundToInt
-import android.graphics.Path
 
 /**
  * The picture, kept as the last bitmap that arrived.
@@ -424,12 +423,72 @@ class ScreenView(context: Context) : View(context) {
         // it keeps a floor size of its own, as the desktop viewers do. Shape,
         // size and rim live in [PointerArt], where they can be held to their
         // promises by a test instead of by eye.
+        // The machine's own cursor, when it has been sent: a hand over a link,
+        // an I-beam over text, a watch over something loading. Drawn where its
+        // hot spot lands, so the pixel that clicks is the pixel under the arrow.
+        val shape = cursorImage
+        if (shape != null) {
+            val rect = PointerArt.bitmapRect(
+                pointerX = x,
+                pointerY = y,
+                width = shape.width,
+                height = shape.height,
+                hotX = shape.hotX,
+                hotY = shape.hotY,
+                scale = min(scaleX, scaleY),
+            )
+            val destination = RectF(
+                rect.left,
+                rect.top,
+                rect.left + rect.width,
+                rect.top + rect.height,
+            )
+            canvas.drawBitmap(shape.bitmap, null, destination, cursorFill)
+            return
+        }
         val size = PointerArt.size(scaleX, scaleY)
         val path = PointerArt.path(x, y, size)
         cursorEdge.strokeWidth = PointerArt.rim(size)
         canvas.drawPath(path, cursorEdge)
         canvas.drawPath(path, cursorFill)
     }
+
+    /**
+     * Takes the machine's pointer shape.
+     *
+     * Called for every cursor the engine reports, which is on a change of the
+     * window under the pointer and not on a clock. The bitmap it replaces is
+     * recycled: a cursor is small, but a link under a moving finger can change it
+     * many times a minute and none of those bitmaps is free.
+     */
+    fun setCursorImage(width: Int, height: Int, hotX: Int, hotY: Int, rgba: ByteArray) {
+        if (width <= 0 || height <= 0 || rgba.size != width * height * 4) return
+        val pixels = IntArray(width * height)
+        for (i in pixels.indices) {
+            val at = i * 4
+            val r = rgba[at].toInt() and 0xff
+            val g = rgba[at + 1].toInt() and 0xff
+            val b = rgba[at + 2].toInt() and 0xff
+            val a = rgba[at + 3].toInt() and 0xff
+            pixels[i] = (a shl 24) or (r shl 16) or (g shl 8) or b
+        }
+        val bitmap = Bitmap.createBitmap(pixels, width, height, Bitmap.Config.ARGB_8888)
+        val previous = cursorImage
+        cursorImage = CursorImage(bitmap, width, height, hotX, hotY)
+        previous?.bitmap?.recycle()
+        postInvalidateOnAnimation()
+    }
+
+    /** The machine's pointer shape, and where its hot spot is in it. */
+    private class CursorImage(
+        val bitmap: Bitmap,
+        val width: Int,
+        val height: Int,
+        val hotX: Int,
+        val hotY: Int,
+    )
+
+    private var cursorImage: CursorImage? = null
 
     /** Where the picture is drawn, after fit, zoom and pan. */
     private fun pictureRect(pictureWidth: Int, pictureHeight: Int): RectF {

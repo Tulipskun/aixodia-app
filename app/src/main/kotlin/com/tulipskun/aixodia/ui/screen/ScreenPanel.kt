@@ -203,6 +203,12 @@ fun ScreenPanel(
                     // composable re-runs for it.
                     view?.invalidateFrame()
                 }
+                is ScreenSocket.Event.Cursor -> {
+                    // The machine's pointer changed shape — a hand, an I-beam, a
+                    // watch. The view draws it instead of its own arrow, so the
+                    // phone shows what the desktop is showing.
+                    view?.setCursorImage(event.width, event.height, event.hotX, event.hotY, event.rgba)
+                }
                 is ScreenSocket.Event.Failed -> {
                     videoHasPicture = false
                     failure = event.reason

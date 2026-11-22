@@ -135,6 +135,30 @@ class ScreenSocket(
             /** The frame's counter, so a missing frame can be noticed. */
             val seq: Long = 0,
         ) : Event
+        /**
+         * What the machine's pointer looks like right now.
+         *
+         * The phone has no pointer of its own, and the pointer it draws has to
+         * change the way the machine's does: a hand over a link, an I-beam over
+         * text, a watch over something loading. X keeps that as the cursor of
+         * the window under the pointer, so the engine reads the pixels back with
+         * XFixes and sends them here — a name cannot be used, because measured
+         * on the engine's own display every cursor came back with an empty one.
+         *
+         * [rgba] is straight RGBA, row by row, `width * height * 4` bytes.
+         */
+        data class Cursor(
+            val width: Int,
+            val height: Int,
+            val hotX: Int,
+            val hotY: Int,
+            val rgba: ByteArray,
+        ) : Event {
+            // A data class with a ByteArray gets identity equality, which is
+            // right here: two cursors with the same bytes are still two events.
+            override fun equals(other: Any?): Boolean = this === other
+            override fun hashCode(): Int = System.identityHashCode(this)
+        }
         data class Failed(val reason: String) : Event
         data object Closed : Event
     }
@@ -530,6 +554,32 @@ class ScreenSocket(
                     ready.complete(true)
                     events.trySend(Event.Ready(greeting))
                 }
+                "cursor" -> {
+                    // A cursor is drawn, not decoded: its size and hot spot are
+                    // what place it, and a malformed one is ignored so the
+                    // pointer keeps the shape it had rather than vanishing.
+                    val width = parsed.optInt("width")
+                    val height = parsed.optInt("height")
+                    val rgba = runCatching {
+                        android.util.Base64.decode(
+                            parsed.optString("rgba"),
+                            android.util.Base64.DEFAULT,
+                        )
+                    }.getOrNull()
+                    if (width in 1..MAX_CURSOR && height in 1..MAX_CURSOR &&
+                        rgba != null && rgba.size == width * height * 4
+                    ) {
+                        events.trySend(
+                            Event.Cursor(
+                                width = width,
+                                height = height,
+                                hotX = parsed.optInt("hot_x").coerceIn(0, width - 1),
+                                hotY = parsed.optInt("hot_y").coerceIn(0, height - 1),
+                                rgba = rgba,
+                            ),
+                        )
+                    }
+                }
                 "error" -> {
                     // The engine has nothing to show, and says why once before
                     // it hangs up. That is not a picture that stopped: it is a
@@ -683,6 +733,15 @@ class ScreenSocket(
 
         /** A frame that claims more tiles than the grid could hold is refused. */
         private const val MAX_TILES = 4096
+
+        /**
+         * The largest cursor that will be believed, in pixels.
+         *
+         * A cursor is sixteen or twenty-four pixels square. A message claiming
+         * thousands is not a cursor, and allocating for it is how a viewer is
+         * made to fall over by a broken frame.
+         */
+        private const val MAX_CURSOR = 128
 
         /** How long the engine has to answer a dial with hello. */
         private const val READY_TIMEOUT_MS = 10_000L
