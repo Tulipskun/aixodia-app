@@ -49,39 +49,34 @@ enum class InputMode(val stored: String, val label: String) {
  * landed on. RealVNC therefore moves it by *part* of the movement, and by more
  * of it the faster the finger goes — slow for aiming, fast for travelling.
  *
- * The two ends of that curve were measured, not guessed: a stock RealVNC Viewer
- * (4.9.6) connected to this machine's own server, with synthetic drags of known
- * length and duration, moved the arrow:
- *
- * | finger            | arrow     | arrow per finger pixel |
- * |-------------------|-----------|------------------------|
- * | 100 px in 1000 ms | 38 px     | 0.38                   |
- * | 100 px in 300 ms  | 34 px     | 0.34                   |
- * | 300 px in 1500 ms | 138 px    | 0.46                   |
- * | 400 px in 200 ms  | 200 px    | 0.50                   |
- * | 100 px in 100 ms  | 60 px     | 0.60                   |
- *
- * Those are desktop pixels for a picture drawn smaller than the desktop, so in
- * terms of the picture the arrow covers between a fifth and two fifths of the
- * finger's travel. That is what the two constants below say, and the ramp
- * between them is what makes a careful movement careful.
+ * The shape of that curve came from measuring a stock RealVNC Viewer 4.9.6
+ * against this machine's own server, with drags of known length and duration:
+ * the arrow took between 0.38 and 0.60 of the finger's travel. Its ends are
+ * deliberate rather than its middle: the top is that 0.6, and the bottom is
+ * above the 0.3 share this viewer used to apply flat.
  */
 object PointerSpeed {
     /** Share of the finger's travel taken at a crawl, for aiming. */
-    const val SLOW = 0.28f
+    const val SLOW = 0.40f
 
     /** Share taken at a flick, for crossing the screen. */
-    const val FAST = 0.42f
+    const val FAST = 0.85f
 
-    /** The speed, in view pixels per millisecond, at which [FAST] is reached. */
-    const val FAST_AT = 1.0f
+    /**
+     * The speed, in view pixels per millisecond, at which [FAST] is reached.
+     *
+     * An ordinary drag is 300 to 900 view pixels a second, which is 0.3 to 0.9
+     * per millisecond: the top of the curve has to be inside that band, or a
+     * normal flick is treated as a careful movement and crawls.
+     */
+    const val FAST_AT = 0.5f
 
     /**
      * The share of a movement to apply at [pxPerMs].
      *
-     * Linear between the two measured ends: below a crawl it is [SLOW], above a
-     * flick it is [FAST], and between them it rises with the speed, which is the
-     * whole of what "acceleration" means here.
+     * Linear between the two ends: below a crawl it is [SLOW], above [FAST_AT]
+     * it is [FAST], and between them it rises with the speed, which is the whole
+     * of what "acceleration" means here.
      */
     fun gain(pxPerMs: Float): Float {
         if (pxPerMs <= 0f) return SLOW
@@ -99,6 +94,43 @@ object PointerSpeed {
     fun spend(owed: Float): Pair<Int, Float> {
         val whole = owed.toInt()
         return whole to owed - whole
+    }
+}
+
+/**
+ * The arithmetic of a pinch.
+ *
+ * The picture is drawn centred plus a pan, so zooming about a point means moving
+ * the pan in the opposite direction by the amount the zoom just gained. Doing
+ * that from the state the pinch began in — rather than from the running one — is
+ * what keeps it still: a pan derived from the live pan and the live zoom feeds
+ * each step back into the next, and the picture drifts, then snaps back when the
+ * arrow reaches an edge.
+ */
+object Pinch {
+    /**
+     * The pan that keeps the point at [anchor] where it is while the picture is
+     * scaled from [drawnAtBase] × [baseZoom] to [drawnAtBase] × [zoom].
+     *
+     * [anchor] and [centre] are in view pixels, [drawnAtBase] is the picture's
+     * drawn size at the fitted zoom, and [basePan] is the pan that was in force
+     * when the fingers landed.
+     */
+    fun pan(
+        anchor: Float,
+        centre: Float,
+        drawnAtBase: Float,
+        basePan: Float,
+        baseZoom: Float,
+        zoom: Float,
+    ): Float {
+        if (baseZoom <= 0f || drawnAtBase <= 0f) return basePan
+        val growth = zoom / baseZoom
+        val leftBase = centre - drawnAtBase / 2f + basePan
+        // The picture point under the anchor is kept under it: its distance from
+        // the left edge grows by exactly the zoom's growth.
+        val left = anchor - (anchor - leftBase) * growth
+        return left - (centre - drawnAtBase * growth / 2f)
     }
 }
 
@@ -136,32 +168,4 @@ object PointerPlan {
      * of dying under the very first threshold.
      */
     fun spend(accumulated: Float, step: Float): Int = (accumulated / step).toInt()
-
-    /**
-     * Where the arrow goes when a touch lands on top of it.
-     *
-     * RealVNC"s help says the cursor sits "offset from under your finger so you
-     * can always see it". In trackpad mode the arrow follows the finger
-     * relatively, so a touch can land exactly where the arrow is and hide it;
-     * this moves the arrow out to [clear] along the line from the finger
-     * through itself — the smallest move that shows it — or, when the arrow is
-     * exactly under the touch, up and to the left, which is where no hand is
-     * resting. Returns null when the arrow is already visible, so a finger
-     * nowhere near the arrow moves nothing until it drags.
-     */
-    fun clearOfFinger(
-        finger: Pair<Float, Float>,
-        arrow: Pair<Float, Float>,
-        clear: Float,
-    ): Pair<Float, Float>? {
-        val dx = arrow.first - finger.first
-        val dy = arrow.second - finger.second
-        if (dx * dx + dy * dy >= clear * clear) return null
-        val length = kotlin.math.hypot(dx, dy)
-        // A nudge needs a direction; an arrow under the touch has none, so it
-        // goes up-left, out from under the thumb.
-        val ux = if (length > 0.001f) dx / length else -1f
-        val uy = if (length > 0.001f) dy / length else -1f
-        return (finger.first + ux * clear) to (finger.second + uy * clear)
-    }
 }

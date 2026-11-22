@@ -68,4 +68,33 @@ object SessionLayout {
      */
     fun home(rail: Float, width: Float, height: Float, margin: Float): Pair<Float, Float> =
         clamp(width - rail - margin, height - rail - margin, rail, width, height, margin)
+
+    /**
+     * Where the rail has to sit for its panes to be on the screen.
+     *
+     * The panes open upward from the rail as one column right-aligned to it, and
+     * the capsule is 260dp wide. A rail dragged to the top shows half a pane; one
+     * dragged to the left shows half a capsule — both were seen on the phone.
+     * The panes are the reason the rail exists, so rather than clip them the rail
+     * moves to where they fit, and returns to where the reader put it when they
+     * close.
+     */
+    fun openAt(
+        x: Float,
+        y: Float,
+        rail: Float,
+        pill: Float,
+        width: Float,
+        height: Float,
+        margin: Float,
+    ): Pair<Float, Float> {
+        // The column is right-aligned to the rail, so it is the rail's right
+        // edge that has to clear the capsule.
+        val fitLeft = margin + pill - rail
+        val maxLeft = (width - rail - margin).coerceAtLeast(margin)
+        // Enough room for the capsule, unless the screen is too narrow for one.
+        val left = x.coerceIn(margin, maxLeft).coerceAtLeast(fitLeft.coerceAtMost(maxLeft))
+        val down = if (y < height / 2f) height - rail - margin else y
+        return left to down
+    }
 }

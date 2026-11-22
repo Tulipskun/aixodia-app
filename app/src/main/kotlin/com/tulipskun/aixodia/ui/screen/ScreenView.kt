@@ -148,11 +148,11 @@ class ScreenView(context: Context) : View(context) {
         color = Color.WHITE
     }
 
+    /** Where the picture sits in this view: fitted, zoomed, panned. */
+    private val viewport = Viewport()
+
     /** 1 means the picture exactly fits the view. */
-    private var zoom = 1f
-    /** Offset of the picture within the view, in view pixels, after the fit. */
-    private var panX = 0f
-    private var panY = 0f
+    private val zoom: Float get() = viewport.zoom
 
     private var downAt = 0L
     private var downX = 0f
@@ -254,13 +254,12 @@ class ScreenView(context: Context) : View(context) {
         }
     }
 
-    // Pinch state, captured when the second finger lands.
+    // Pinch state, captured when the second finger lands. The zoom and pan it
+    // began from are the viewport's own record, so there is one answer to "what
+    // did this pinch start as" rather than two that can drift apart.
     private var pinchStartDistance = 0f
-    private var pinchStartZoom = 1f
     private var pinchFocusX = 0f
     private var pinchFocusY = 0f
-    private var pinchStartPanX = 0f
-    private var pinchStartPanY = 0f
 
 
     fun attach(socket: ScreenSocket, surface: ScreenSurface) {
@@ -299,16 +298,12 @@ class ScreenView(context: Context) : View(context) {
     fun isActualSize(): Boolean {
         val picture = surface?.bitmap() ?: return false
         if (picture.width <= 0 || picture.height <= 0 || width == 0 || height == 0) return false
-        val fit = min(width.toFloat() / picture.width, height.toFloat() / picture.height)
-        if (fit <= 0f) return false
-        return zoom >= (1f / fit).coerceIn(MIN_ZOOM, MAX_ZOOM) - 0.01f
+        return viewport.isActualSize(width, height, picture.width, picture.height)
     }
 
     /** Scale the picture to fit the view: the whole desktop, small. */
     fun fitScreen() {
-        zoom = 1f
-        panX = 0f
-        panY = 0f
+        viewport.fit()
         postInvalidateOnAnimation()
     }
 
@@ -320,13 +315,7 @@ class ScreenView(context: Context) : View(context) {
      */
     fun actualSize() {
         val picture = surface?.bitmap() ?: return
-        if (picture.width <= 0 || picture.height <= 0 || width == 0 || height == 0) return
-        val fit = min(width.toFloat() / picture.width, height.toFloat() / picture.height)
-        if (fit <= 0f) return
-        zoom = (1f / fit).coerceIn(MIN_ZOOM, MAX_ZOOM)
-        panX = 0f
-        panY = 0f
-        clampPan()
+        viewport.actualSize(width, height, picture.width, picture.height)
         postInvalidateOnAnimation()
     }
 
@@ -335,11 +324,16 @@ class ScreenView(context: Context) : View(context) {
         postInvalidateOnAnimation()
     }
 
-    /** Drops the picture and goes back to "nothing yet". */
+    /**
+     * Drops the picture, keeping the reader's place in it.
+     *
+     * A redial — the engine restarting, the tunnel blinking — is not the reader
+     * asking to start over: throwing the zoom away here is what made a magnified
+     * desktop jump back to fitted a second after the reader pinched into it.
+     * The zoom survives, and [fitScreen] is what forgets it, on purpose, when
+     * the picture comes back a different size.
+     */
     fun cleared() {
-        zoom = 1f
-        panX = 0f
-        panY = 0f
         postInvalidateOnAnimation()
     }
 
@@ -395,16 +389,8 @@ class ScreenView(context: Context) : View(context) {
 
     /** Where the picture is drawn, after fit, zoom and pan. */
     private fun pictureRect(pictureWidth: Int, pictureHeight: Int): RectF {
-        if (pictureWidth <= 0 || pictureHeight <= 0 || width == 0 || height == 0) {
-            return RectF(0f, 0f, width.toFloat(), height.toFloat())
-        }
-        val fitScale = min(width.toFloat() / pictureWidth, height.toFloat() / pictureHeight)
-        val scale = fitScale * zoom
-        val drawnWidth = pictureWidth * scale
-        val drawnHeight = pictureHeight * scale
-        val left = (width - drawnWidth) / 2f + panX
-        val top = (height - drawnHeight) / 2f + panY
-        return RectF(left, top, left + drawnWidth, top + drawnHeight)
+        val box = viewport.box(width, height, pictureWidth, pictureHeight)
+        return RectF(box.left, box.top, box.left + box.width, box.top + box.height)
     }
 
     /**
@@ -438,18 +424,6 @@ class ScreenView(context: Context) : View(context) {
      * which reads as "the position is wrong" — because it is.
      */
     private fun pointerFor(event: MotionEvent): Pair<Int, Int>? = toScreen(event.x, event.y)
-
-    /** Keeps the picture from being dragged off into empty space. */
-    private fun clampPan() {
-        val picture = surface?.bitmap() ?: return
-        val box = pictureRect(picture.width, picture.height)
-        // How far it may slide: half the overflow on each side, so an edge can
-        // reach the middle of the view but not fly past it.
-        val slackX = max(0f, (box.width() - width) / 2f)
-        val slackY = max(0f, (box.height() - height) / 2f)
-        panX = panX.coerceIn(-slackX, slackX)
-        panY = panY.coerceIn(-slackY, slackY)
-    }
 
     private fun distance(event: MotionEvent): Float {
         if (event.pointerCount < 2) return 0f
@@ -509,15 +483,14 @@ class ScreenView(context: Context) : View(context) {
                 // a slow movement is a drag and a quick one is a click.
                 if (inputMode == InputMode.DIRECT) {
                     pressDirect(event)
-                } else {
-                    // The pad's arrow follows the finger relatively, so a touch
-                    // can land on top of it. RealVNC keeps the cursor "offset
-                    // from under your finger so you can always see it"; the same
-                    // rule here, applied once when the gesture starts rather than
-                    // during it, because an arrow that keeps fleeing a moving
-                    // thumb is harder to aim than one that is briefly hidden.
-                    keepArrowVisible(event)
                 }
+                // The pad does not move the arrow to the finger. It used to: a
+                // touch was nudged a fingertip away from the pointer "so the
+                // arrow stays visible", which read as the arrow jumping across
+                // the desktop the moment a finger landed, and a tap measured on
+                // the phone moved the pointer 145 pixels without anyone asking
+                // it to. The arrow is where the reader left it, and the pad's
+                // gain is what keeps it away from the thumb.
                 // A tap is remembered so a second one can turn it into a double.
                 return true
             }
@@ -535,11 +508,9 @@ class ScreenView(context: Context) : View(context) {
                     // over, and it never pressed anything — a drag that begins
                     // with a tap is the double-tap-and-drag gesture, not a move.
                     pinchStartDistance = distance(event)
-                    pinchStartZoom = zoom
                     pinchFocusX = focusX(event)
                     pinchFocusY = focusY(event)
-                    pinchStartPanX = panX
-                    pinchStartPanY = panY
+                    viewport.beginPinch(pinchFocusX, pinchFocusY)
                     twoFingerX = focusX(event)
                     twoFingerY = focusY(event)
                     scrollFromY = focusY(event)
@@ -781,14 +752,15 @@ class ScreenView(context: Context) : View(context) {
         val socket = socket ?: return
         val apart = distance(event)
         val ratio = if (pinchStartDistance > 0f) apart / pinchStartDistance else 1f
-        val wanted = (pinchStartZoom * ratio).coerceIn(MIN_ZOOM, MAX_ZOOM)
+        val wanted = (viewport.pinchBase * ratio).coerceIn(Viewport.MIN_ZOOM, Viewport.MAX_ZOOM)
         val dx = focusX(event) - twoFingerX
         val dy = focusY(event) - twoFingerY
-        if (abs(wanted - zoom) > 0.002f || abs(dx) > 0.5f || abs(dy) > 0.5f) pinched = true
+        val zoomed = abs(wanted - viewport.pinchBase) > ZOOM_SLOP
+        if (zoomed || abs(dx) > 0.5f || abs(dy) > 0.5f) pinched = true
 
-        // The picture follows the fingers exactly: zoom about the point held,
-        // and move by however far the pair moved.
-        applyZoom(wanted, pinchFocusX, pinchFocusY, pinchStartPanX + dx, pinchStartPanY + dy)
+        // The picture follows the fingers: zoom about the point between them,
+        // and slide by however far the pair moved.
+        applyZoom(wanted, dx, dy)
 
         // Scrolling the machine is a separate thing from moving the picture, and
         // RealVNC offers it with the same two fingers, both ways: "drag up or
@@ -797,7 +769,13 @@ class ScreenView(context: Context) : View(context) {
         // spent apart, so a sideways drag never moves the page and a diagonal
         // one does both; the remainder stays with the touch, so a slow drag
         // scrolls slowly instead of dying under the first threshold.
-        if (!pinched || abs(wanted - pinchStartZoom) < 0.01f) {
+        //
+        // A zoomed picture is panned, not scrolled: two fingers on a magnified
+        // desktop are how you move around it, and sending wheel notches at the
+        // same time would scroll whatever is under them — the picture would move
+        // one way and the application the other.
+        val canPan = zoom > 1.001f
+        if (!zoomed && !canPan) {
             val focusNowX = focusX(event)
             val focusNowY = focusY(event)
             owedScrollX += focusNowX - scrollFromX
@@ -829,30 +807,29 @@ class ScreenView(context: Context) : View(context) {
      * and the machine is told, because a cursor that only looks moved is a
      * cursor that clicks where the picture no longer shows it.
      */
-    private fun keepArrowVisible(event: MotionEvent) {
-        val socket = socket ?: return
-        val picture = surface?.bitmap() ?: return
-        val at = arrow() ?: return
-        if (picture.width <= 0 || picture.height <= 0) return
-        val box = pictureRect(picture.width, picture.height)
-        if (box.width() <= 0f || box.height() <= 0f) return
-        val scaleX = box.width() / picture.width
-        val scaleY = box.height() / picture.height
-        val arrowX = box.left + at.first * scaleX
-        val arrowY = box.top + at.second * scaleY
-        val moved = PointerPlan.clearOfFinger(
-            finger = event.x to event.y,
-            arrow = arrowX to arrowY,
-            clear = ARROW_CLEARANCE_PX * resources.displayMetrics.density,
-        ) ?: return
-        val to = toScreen(moved.first, moved.second) ?: return
-        pointerX = to.first
-        pointerY = to.second
-        markCursor(to.first, to.second)
-        sendMove(socket, to.first, to.second)
+    /** Keeps the drawn arrow where the local finger just put it. */
+    /**
+     * Puts the arrow in the middle of the desktop, and says so to the machine.
+     *
+     * A viewer connects to a desktop whose pointer is wherever the last session
+     * left it — often in a corner — and on a phone with a trackpad there is no
+     * way to tell where it is before the first movement, which makes that first
+     * movement feel lost. RealVNC parks it in the middle on connecting, and so
+     * does this: one known place to start aiming from.
+     */
+    fun centreArrow(): Boolean {
+        val socket = socket ?: return false
+        val picture = surface?.bitmap()
+        if (picture == null || picture.width <= 0 || picture.height <= 0) return false
+        val x = picture.width / 2
+        val y = picture.height / 2
+        pointerX = x
+        pointerY = y
+        markCursor(x, y)
+        sendMove(socket, x, y)
+        return true
     }
 
-    /** Keeps the drawn arrow where the local finger just put it. */
     private fun markCursor(x: Int, y: Int) {
         surface?.cursorTo(x to y)
         postInvalidateOnAnimation()
@@ -879,62 +856,25 @@ class ScreenView(context: Context) : View(context) {
      * focus stays put means moving the centre by the same proportion, which is
      * what makes a pinch feel anchored rather than skating.
      */
-    private fun applyZoom(wanted: Float, focusX: Float, focusY: Float, basePanX: Float, basePanY: Float) {
-        // Derived from where the pinch began, never from the frame before.
-        // Compounding on the running zoom made every event depend on the last
-        // one, so the base pan and the zoom disagreed and the picture shifted
-        // under the fingers a little more each time — which reads as a stutter.
-        val previous = pinchStartZoom
-        val zoom = wanted.coerceIn(MIN_ZOOM, MAX_ZOOM)
-        this.zoom = zoom
-        val growth = if (previous <= 0f) 1f else zoom / previous
-        // What is being zoomed about is the pointer, not the middle of the
-        // fingers. Moving the desktop so the arrow stays where it is on the
-        // picture is what keeps the thing being worked on in view: pinching to
-        // read something small would otherwise throw it off the screen. It
-        // slides only when the arrow is against an edge, because the picture
-        // stops at the desktop's own bounds.
-        val centreX = width / 2f
-        val centreY = height / 2f
-        val anchor = anchorFor(focusX, focusY)
-        panX = basePanX + (anchor.first - centreX - basePanX) * (1 - growth)
-        panY = basePanY + (anchor.second - centreY - basePanY) * (1 - growth)
-        clampPan()
+    private fun applyZoom(wanted: Float, slideX: Float, slideY: Float) {
+        val picture = surface?.bitmap() ?: return
+        viewport.pinch(wanted, slideX, slideY, width, height, picture.width, picture.height)
         // On the next frame, not now: touch events arrive faster than the screen
         // refreshes, and drawing per event is the other half of the stutter.
         postInvalidateOnAnimation()
-    }
-
-    /**
-     * The point a pinch should keep still, in view coordinates.
-     *
-     * The pointer's place on screen, so zooming holds on to whatever is under it.
-     * Falls back to the middle of the fingers when the pointer's place is not
-     * known, which is the best a pinch can do then.
-     */
-    private fun anchorFor(focusX: Float, focusY: Float): Pair<Float, Float> {
-        val picture = surface?.bitmap()
-        val at = surface?.cursor
-        if (picture == null || at == null || picture.width <= 0 || picture.height <= 0) {
-            return focusX to focusY
-        }
-        val box = pictureRect(picture.width, picture.height)
-        if (box.width() <= 0f || box.height() <= 0f) return focusX to focusY
-        val x = box.left + at.first * (box.width() / picture.width)
-        val y = box.top + at.second * (box.height() / picture.height)
-        return x to y
     }
 
     companion object {
         /** Movement in view pixels before a press becomes a drag. */
         private const val TOUCH_SLOP = 12f
 
+        /** How much the pinch has to spread before it counts as a zoom. */
+        private const val ZOOM_SLOP = 0.01f
+
         /** Movement before a two-finger drag becomes a scroll notch. */
         private const val SCROLL_STEP_PX = 24f
 
         /** How much the picture may grow; below 1 it would be a keyhole. */
-        private const val MIN_ZOOM = 1f
-        private const val MAX_ZOOM = 4f
 
         /**
          * The shortest gap between two pointer moves, in milliseconds.
@@ -950,7 +890,7 @@ class ScreenView(context: Context) : View(context) {
          * A touch panel's own speed between two events is noisy; a quarter of
          * each reading is enough to follow a hand without following the noise.
          */
-        private const val SPEED_SMOOTHING = 0.25f
+        private const val SPEED_SMOOTHING = 0.4f
 
         /** How soon a second tap counts as a double tap. */
         private const val DOUBLE_TAP_MS = 300L
@@ -959,12 +899,5 @@ class ScreenView(context: Context) : View(context) {
         private const val CURSOR_SIZE = 14f
         private const val CURSOR_MAX = 30f
 
-        /**
-         * How far from a finger the arrow is kept, in dp.
-         *
-         * A thumb covers roughly this much of the picture, so an arrow nearer
-         * than this to the touch point is an arrow nobody can see.
-         */
-        private const val ARROW_CLEARANCE_PX = 44f
     }
 }

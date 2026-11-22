@@ -107,8 +107,28 @@ fun SessionChrome(
             } ?: SessionLayout.home(rail, size.width.toFloat(), size.height.toFloat(), margin)
         },
     ) {
-        val (x, y) = at ?: return@Box
         val home = SessionLayout.home(rail, box.width.toFloat(), box.height.toFloat(), margin)
+        val parked = at ?: return@Box
+        // An open pane needs room the collapsed button does not: it is wider than
+        // the button and it opens upward, so a rail near the top-left corner puts
+        // half of it off the screen. While a pane is open the rail therefore sits
+        // where the pane fits, and goes back where the reader parked it when the
+        // pane closes.
+        val panesOpen = open || mouse || settings
+        val (x, y) = if (panesOpen) {
+            val pill = with(density) { SessionLayout.PILL_DP.dp.toPx() }
+            SessionLayout.openAt(
+                x = parked.first,
+                y = parked.second,
+                rail = rail,
+                pill = pill,
+                width = box.width.toFloat(),
+                height = box.height.toFloat(),
+                margin = margin,
+            )
+        } else {
+            parked
+        }
 
         // One column, right-aligned and bottom-anchored: the panes grow upward
         // from the rail, so opening one never pushes the rail off the screen.

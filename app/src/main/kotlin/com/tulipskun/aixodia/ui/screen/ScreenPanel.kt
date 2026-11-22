@@ -79,6 +79,17 @@ fun ScreenPanel(
     val video = remember { VideoSurface(onFirstFrame = {}, onNeedKeyframe = { socket.requestKeyframe() }) }
     var videoMode by remember { mutableStateOf(false) }
     var videoHasPicture by remember { mutableStateOf(false) }
+    // Whether this link has parked the arrow in the middle yet. Per link, not
+    // per pane: a redial is a new session on a desktop whose pointer the last
+    // one left somewhere.
+    var centredArrow by remember { mutableStateOf(false) }
+    // The size of the picture being shown. A redial keeps the reader's zoom; only
+    // a picture that comes back a different shape resets it, because a zoom
+    // chosen for one desktop means nothing on a bigger one.
+    var pictureSize by remember { mutableStateOf(0 to 0) }
+    val centreOnce = {
+        if (!centredArrow && view?.centreArrow() == true) centredArrow = true
+    }
 
     // The reader's choices for this pane: the way a finger becomes a pointer, a
     // chosen mouse button, and how the picture travels. They are remembered on
@@ -150,6 +161,10 @@ fun ScreenPanel(
                     // A codec change is a new picture: the surface is resized and
                     // the decoder rebuilt, because frames from the old one cannot
                     // be painted into the new.
+                    if (pictureSize != (event.hello.width to event.hello.height)) {
+                        pictureSize = event.hello.width to event.hello.height
+                        view?.fitScreen()
+                    }
                     surface.sizeTo(event.hello.width, event.hello.height)
                     // The engine decides; the client does not ask for video it
                     // cannot be given.
@@ -163,6 +178,7 @@ fun ScreenPanel(
                     codec = "h264"
                     video.submit(event.accessUnit, event.keyframe)
                     surface.cursorTo(event.cursor)
+                    centreOnce()
                     view?.invalidateFrame()
                     if (video.hasPicture) videoHasPicture = true
                 }
@@ -178,6 +194,11 @@ fun ScreenPanel(
                     }
                     surface.cursorTo(event.cursor)
                     surface.paint(event)
+                    // The first picture of a link parks the arrow in the middle of
+                    // the desktop, the way a viewer does on connecting: the
+                    // machine's pointer is wherever the last session left it, and
+                    // a pad with no arrow in sight has nothing to aim from.
+                    centreOnce()
                     // The frame is one bitmap, so a repaint is a single draw; no
                     // composable re-runs for it.
                     view?.invalidateFrame()
@@ -187,6 +208,7 @@ fun ScreenPanel(
                     failure = event.reason
                     // The picture on screen is now a photograph of the past: say
                     // so rather than leaving it looking live.
+                    centredArrow = false
                     surface.clear()
                     view?.cleared()
                 }
@@ -195,6 +217,7 @@ fun ScreenPanel(
                     // puts the spinner back, which is honest: there is no picture
                     // behind this black rectangle until the next hello.
                     hello = null
+                    centredArrow = false
                     surface.clear()
                     view?.cleared()
                 }
@@ -266,6 +289,11 @@ fun ScreenPanel(
             // a black pill, exactly where RealVNC puts it, so the picture is the
             // screen rather than the top of a form.
             SessionChrome(
+                // The chrome is laid over the whole picture: without a size of its
+                // own it is anchored to its own content, which puts a rail that
+                // should float in the corner of the screen at the corner of a
+                // 54dp box — seen on the phone as a pill hanging off the edge.
+                modifier = Modifier.fillMaxSize(),
                 open = railOpen,
                 mouse = mouseOpen,
                 settings = settingsOpen,

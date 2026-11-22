@@ -68,6 +68,52 @@ class SessionLayoutTest {
     }
 
     @Test
+    fun anOpenPaneBringsTheRailWhereThePaneFits() {
+        // 900 px wide, a 152 px rail, a 731 px capsule and a 34 px margin. A rail
+        // parked in the top-left corner would show three quarters of the capsule
+        // off the left edge and the whole of the pane above the glass, which is
+        // what the phone showed before this.
+        val rail = 152f
+        val pill = 731f
+        val width = 900f
+        val height = 1800f
+        val margin = 34f
+        val (x, y) = SessionLayout.openAt(
+            x = margin,
+            y = margin,
+            rail = rail,
+            pill = pill,
+            width = width,
+            height = height,
+            margin = margin,
+        )
+        // The capsule is on the screen: it hangs left from the rail, so its left
+        // edge lands on the margin.
+        assertEquals(margin, x + rail - pill, 0.5f)
+        // And the pane opens downward-room enough to be seen.
+        assertEquals(height - rail - margin, y, 0.5f)
+    }
+
+    @Test
+    fun aRailParkedWhereAPaneFitsIsLeftAlone() {
+        // In the bottom-right corner the panes already fit, so nothing moves: a
+        // rail that jumped when a pane opened would be a rail that cannot be
+        // aimed at.
+        val rail = 152f
+        val (x, y) = SessionLayout.openAt(
+            x = 700f,
+            y = 1500f,
+            rail = rail,
+            pill = 731f,
+            width = 900f,
+            height = 1800f,
+            margin = 34f,
+        )
+        assertEquals(700f, x, 0.01f)
+        assertEquals(1500f, y, 0.01f)
+    }
+
+    @Test
     fun theGeometryIsTheViewerS() {
         // Read from RealVNC Viewer 4.9.5's resources: the rail is 54dp, the pill
         // 260dp, an item 44dp and the outline 2.5dp.

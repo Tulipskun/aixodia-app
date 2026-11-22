@@ -1,7 +1,6 @@
 package com.tulipskun.aixodia.ui.screen
 
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -66,64 +65,10 @@ class PointerPlanTest {
         assertEquals(5, PointerPlan.spend(125f, 24f))
     }
 
-    // --- Keeping the arrow visible under a thumb ---------------------------
-
     @Test
-    fun anArrowUnderTheFingerIsMovedOutToTheClearance() {
-        val moved = PointerPlan.clearOfFinger(
-            finger = 100f to 400f,
-            arrow = 104f to 398f,
-            clear = 44f,
-        )
-        requireNotNull(moved)
-        val distance = kotlin.math.hypot(moved.first - 100f, moved.second - 400f)
-        assertEquals(44f, distance, 0.01f)
-    }
-
-    @Test
-    fun theArrowMovesAlongTheLineItAlreadyHas() {
-        // Straight above the finger stays straight above it: the smallest move
-        // that makes it visible, not a jump to some fixed corner.
-        val moved = PointerPlan.clearOfFinger(
-            finger = 500f to 500f,
-            arrow = 500f to 480f,
-            clear = 44f,
-        )
-        requireNotNull(moved)
-        assertEquals(500f, moved.first, 0.01f)
-        assertEquals(456f, moved.second, 0.01f)
-    }
-
-    @Test
-    fun anArrowExactlyUnderTheFingerGoesUpAndLeft() {
-        // No direction to keep, and the up-left side is where the hand is not.
-        val moved = PointerPlan.clearOfFinger(
-            finger = 200f to 200f,
-            arrow = 200f to 200f,
-            clear = 44f,
-        )
-        requireNotNull(moved)
-        assertTrue(moved.first < 200f)
-        assertTrue(moved.second < 200f)
-    }
-
-    @Test
-    fun anArrowAlreadyInSightIsLeftAlone() {
-        // Outside the thumb's reach: moving it would be a jump the reader did
-        // not ask for.
-        assertNull(
-            PointerPlan.clearOfFinger(
-                finger = 100f to 100f,
-                arrow = 300f to 300f,
-                clear = 44f,
-            ),
-        )
-    }
-
-    @Test
-    fun a_crawl_keeps_a_fifth_of_the_movement_and_a_flick_two_fifths() {
-        // The two ends of the curve, from RealVNC's own measured table. A slow
-        // hand gets fine aim; a fast one crosses the screen.
+    fun a_crawl_moves_a_third_of_the_movement_and_a_flick_three_quarters() {
+        // The two ends of the curve. A slow hand gets fine aim; a fast one
+        // crosses the screen.
         assertEquals(PointerSpeed.SLOW, PointerSpeed.gain(0f), 0.0001f)
         // Just off a standstill it has already begun to rise, which is the point
         // of the ramp: there is no speed at which the arrow ignores the hand.
@@ -162,6 +107,70 @@ class PointerPlanTest {
         assertEquals(0.8f, rest, 0.0001f)
         val (third, _) = PointerSpeed.spend(rest + 0.4f)
         assertEquals(1, third)
+    }
+
+    @Test
+    fun an_ordinary_drag_reaches_the_top_of_the_curve() {
+        // 400 view pixels in half a second is a normal flick, not a careful
+        // movement: 0.8 per millisecond, which is past FAST_AT. If the top of
+        // the curve sat outside the speeds a hand actually reaches, every drag
+        // would crawl — which is exactly how it felt before this was measured.
+        val gain = PointerSpeed.gain(400f / 500f)
+        assertEquals(PointerSpeed.FAST, gain, 0.0001f)
+        // Even a deliberately slow drag of 100 px a second is a third of the way
+        // up the ramp, not stuck at the bottom.
+        assertTrue(PointerSpeed.gain(100f / 1000f) > PointerSpeed.SLOW + 0.05f)
+    }
+
+    // --- Pinching: the picture must not drift or spring back ---------------
+
+    @Test
+    fun a_pinch_keeps_the_point_under_the_fingers_where_it_is() {
+        // A 1280-wide picture fitted into 640 view pixels: drawn 640 wide, and
+        // the pan that was in force when the fingers landed is zero.
+        val centre = 320f
+        val drawnAtBase = 640f
+        val anchor = 200f
+        val basePan = 0f
+        // The picture point under the anchor, before.
+        val before = (anchor - (centre - drawnAtBase / 2f + basePan)) / 1f
+        // Zoom to twice the size in one go.
+        val pan = Pinch.pan(anchor, centre, drawnAtBase, basePan, 1f, 2f)
+        val after = (anchor - (centre - drawnAtBase * 2f / 2f + pan)) / 2f
+        assertEquals(before, after, 0.001f)
+    }
+
+    @Test
+    fun a_pinch_at_the_same_zoom_moves_nothing() {
+        assertEquals(0.3f, Pinch.pan(200f, 320f, 640f, 0.3f, 1f, 1f), 0.0001f)
+        assertEquals(-7f, Pinch.pan(500f, 320f, 2000f, -7f, 3.2f, 3.2f), 0.0001f)
+    }
+
+    @Test
+    fun every_step_of_a_pinch_holds_the_same_point_still() {
+        // Step the zoom the way touch events do, always from the state the
+        // fingers landed in, which is the whole point of the rewrite: the pan is
+        // a function of (zoom, anchor), never of the event before it. If any
+        // step used the running pan it would drift, and the picture would snap
+        // when the arrow reached an edge.
+        val centre = 320f
+        val drawnAtBase = 640f
+        for (anchor in listOf(40f, 260f, 320f, 480f, 600f)) {
+            val before = (anchor - (centre - drawnAtBase / 2f)) / 1f
+            var zoom = 1f
+            while (zoom <= 3f) {
+                val pan = Pinch.pan(anchor, centre, drawnAtBase, 0f, 1f, zoom)
+                val after = (anchor - (centre - drawnAtBase * zoom / 2f + pan)) / zoom
+                assertEquals("anchor $anchor at zoom $zoom", before, after, 0.001f)
+                zoom += 0.05f
+            }
+        }
+        // And the same answer whichever event asks: no path dependence.
+        assertEquals(
+            Pinch.pan(260f, centre, drawnAtBase, 0f, 1f, 2f),
+            Pinch.pan(260f, centre, drawnAtBase, 0f, 1f, 2f),
+            0f,
+        )
     }
 
     @Test
