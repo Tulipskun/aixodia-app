@@ -138,6 +138,35 @@ class Viewport {
         return FloatBox(left, top, drawnWidth, drawnHeight)
     }
 
+    /**
+     * Slides the picture so the pointer stays in the middle of the view.
+     *
+     * This is what the viewer this one imitates does, measured on the phone
+     * against this engine: a drag that took the pointer 141 picture pixels
+     * rightward panned the picture 281 screen pixels and left the arrow exactly
+     * where it was, at the view's centre, 1 pixel off. The arrow only moves once
+     * the picture has nowhere left to slide — at its edge — and then it is the
+     * arrow that travels and the picture that stays.
+     *
+     * The pan that puts the arrow in the middle is `drawnWidth / 2 - x * scale`
+     * and no more than the slack allows, so a picture with nowhere to slide
+     * leaves the pan at zero and the arrow moves on its own.
+     */
+    fun followPointer(
+        pointerX: Float,
+        pointerY: Float,
+        viewWidth: Int,
+        viewHeight: Int,
+        pictureWidth: Int,
+        pictureHeight: Int,
+    ) {
+        val fit = fitOf(viewWidth, viewHeight, pictureWidth, pictureHeight) ?: return
+        val scale = fit * zoom
+        panX = pictureWidth * scale / 2f - pointerX * scale
+        panY = pictureHeight * scale / 2f - pointerY * scale
+        clamp(viewWidth, viewHeight, pictureWidth, pictureHeight)
+    }
+
     /** Keeps the picture from being dragged off into empty space. */
     fun clamp(viewWidth: Int, viewHeight: Int, pictureWidth: Int, pictureHeight: Int) {
         val box = box(viewWidth, viewHeight, pictureWidth, pictureHeight)

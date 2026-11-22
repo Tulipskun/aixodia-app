@@ -752,6 +752,19 @@ class ScreenView(context: Context) : View(context) {
         pointerX = wantX
         pointerY = wantY
         markCursor(wantX, wantY)
+        // The picture slides under the arrow rather than the arrow sliding over
+        // the picture: the arrow stays in the middle of the pane while there is
+        // anywhere for the picture to go, and takes the movement itself once the
+        // picture is at its edge. That is the viewer this pane copies, measured
+        // on the phone — see [Viewport.followPointer].
+        viewport.followPointer(
+            wantX.toFloat(),
+            wantY.toFloat(),
+            width,
+            height,
+            picture.width,
+            picture.height,
+        )
 
         // Held down for a double-tap-and-drag: the button stays pressed and the
         // object follows the pointer.
