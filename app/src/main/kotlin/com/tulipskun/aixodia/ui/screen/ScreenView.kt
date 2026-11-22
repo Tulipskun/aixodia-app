@@ -578,6 +578,11 @@ class ScreenView(context: Context) : View(context) {
                 // it was on purpose: lowering it would let the ACTION_UP that
                 // follows look like a one-finger tap, which turned a two-finger
                 // click into a left click and a three-finger click into nothing.
+                //
+                // A pinch that ends here still has to put the arrow back in the
+                // middle: the zoom is anchored under the fingers, which leaves
+                // the arrow wherever the pinch happened.
+                if (pinched) recentre()
                 dragged = false
                 movedEnough = true
                 return true
@@ -594,6 +599,7 @@ class ScreenView(context: Context) : View(context) {
                 // put it — measured, half a drag short.
                 flushMove()
                 if (touchPressed) releaseTouchPress(event) else endOneFinger(event)
+                if (pinched) recentre()
                 fingersDown = 0
                 return true
             }
@@ -974,7 +980,6 @@ class ScreenView(context: Context) : View(context) {
     private fun applyZoom(wanted: Float, slideX: Float, slideY: Float) {
         val picture = surface?.bitmap() ?: return
         viewport.pinch(wanted, slideX, slideY, width, height, picture.width, picture.height)
-        recentre()
         // On the next frame, not now: touch events arrive faster than the screen
         // refreshes, and drawing per event is the other half of the stutter.
         postInvalidateOnAnimation()
