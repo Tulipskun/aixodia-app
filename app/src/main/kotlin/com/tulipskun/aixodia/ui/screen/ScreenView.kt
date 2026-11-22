@@ -139,7 +139,7 @@ class ScreenView(context: Context) : View(context) {
     private val cursorEdge = Paint().apply {
         isAntiAlias = true
         style = Paint.Style.STROKE
-        strokeWidth = 2.5f
+        strokeWidth = PointerArt.RIM
         color = Color.BLACK
     }
     private val cursorFill = Paint().apply {
@@ -304,21 +304,40 @@ class ScreenView(context: Context) : View(context) {
     }
 
     /**
-     * Puts the arrow back in the middle of the pane after the zoom changes.
+     * Pulls the arrow to the middle of the pane after the zoom changes.
      *
-     * A pinch keeps the point under the fingers where it was, which is right for
-     * the gesture but leaves the arrow wherever the pinch happened — reported
-     * from the phone as "after zooming the mouse is not in the middle". The
-     * arrow belongs where every other movement puts it: the middle of the pane,
-     * with the picture slid underneath.
+     * The arrow is moved, not the picture. Sliding the picture until the arrow
+     * happened to be in the middle was reported from the phone as the view
+     * flicking off to find the mouse: a jump of hundreds of pixels of desktop
+     * for a pinch that had not asked the machine to move at all. So the pan is
+     * left as the pinch made it and the arrow is put where the reader wants it,
+     * which is the middle — the same relative position every other movement
+     * keeps it in, and one the machine is told about, because on the machine the
+     * pointer really has moved.
      */
-    private fun recentre() {
+    private fun pullArrowToCentre() {
         val picture = surface?.bitmap() ?: return
         if (picture.width <= 0 || picture.height <= 0 || width == 0 || height == 0) return
-        val (x, y) = arrow() ?: (picture.width / 2 to picture.height / 2)
+        val (midX, midY) = viewport.pictureAt(
+            width / 2f,
+            height / 2f,
+            width,
+            height,
+            picture.width,
+            picture.height,
+        ) ?: return
+        val wantX = midX.toInt()
+        val wantY = midY.toInt()
+
+        pointerX = wantX
+        pointerY = wantY
+        markCursor(wantX, wantY)
+        socket?.let { sendMove(it, wantX, wantY) }
+        // And the picture is kept where the arrow now is, so the next drag slides
+        // it rather than losing the middle first.
         viewport.followPointer(
-            x.toFloat(),
-            y.toFloat(),
+            wantX.toFloat(),
+            wantY.toFloat(),
             width,
             height,
             picture.width,
@@ -329,7 +348,7 @@ class ScreenView(context: Context) : View(context) {
     /** Scale the picture to fit the view: the whole desktop, small. */
     fun fitScreen() {
         viewport.fit()
-        recentre()
+        pullArrowToCentre()
         postInvalidateOnAnimation()
     }
 
@@ -342,7 +361,7 @@ class ScreenView(context: Context) : View(context) {
     fun actualSize() {
         val picture = surface?.bitmap() ?: return
         viewport.actualSize(width, height, picture.width, picture.height)
-        recentre()
+        pullArrowToCentre()
         postInvalidateOnAnimation()
     }
 
@@ -402,18 +421,12 @@ class ScreenView(context: Context) : View(context) {
         val x = box.left + at.first * scaleX
         val y = box.top + at.second * scaleY
         // A pointer that shrinks to nothing on a fitted picture is unreadable;
-        // it keeps a floor size of its own, as the desktop viewers do.
-        val size = (CURSOR_SIZE * max(1f, min(scaleX, scaleY))).coerceAtMost(CURSOR_MAX)
-        val path = Path().apply {
-            moveTo(x, y)
-            lineTo(x + size * 0.62f, y + size)
-            lineTo(x + size * 0.28f, y + size * 0.76f)
-            lineTo(x + size * 0.08f, y + size * 1.12f)
-            lineTo(x - size * 0.10f, y + size * 1.02f)
-            lineTo(x + size * 0.10f, y + size * 0.66f)
-            lineTo(x - size * 0.16f, y + size * 0.66f)
-            close()
-        }
+        // it keeps a floor size of its own, as the desktop viewers do. Shape,
+        // size and rim live in [PointerArt], where they can be held to their
+        // promises by a test instead of by eye.
+        val size = PointerArt.size(scaleX, scaleY)
+        val path = PointerArt.path(x, y, size)
+        cursorEdge.strokeWidth = PointerArt.rim(size)
         canvas.drawPath(path, cursorEdge)
         canvas.drawPath(path, cursorFill)
     }
@@ -582,7 +595,7 @@ class ScreenView(context: Context) : View(context) {
                 // A pinch that ends here still has to put the arrow back in the
                 // middle: the zoom is anchored under the fingers, which leaves
                 // the arrow wherever the pinch happened.
-                if (pinched) recentre()
+                if (pinched) pullArrowToCentre()
                 dragged = false
                 movedEnough = true
                 return true
@@ -599,7 +612,7 @@ class ScreenView(context: Context) : View(context) {
                 // put it — measured, half a drag short.
                 flushMove()
                 if (touchPressed) releaseTouchPress(event) else endOneFinger(event)
-                if (pinched) recentre()
+                if (pinched) pullArrowToCentre()
                 fingersDown = 0
                 return true
             }
@@ -1009,8 +1022,6 @@ class ScreenView(context: Context) : View(context) {
         private const val DOUBLE_TAP_MS = 300L
 
         /** The arrow's size at 1:1, and the largest it is allowed to grow. */
-        private const val CURSOR_SIZE = 14f
-        private const val CURSOR_MAX = 30f
 
     }
 }

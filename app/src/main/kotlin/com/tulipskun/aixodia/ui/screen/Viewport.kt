@@ -167,6 +167,28 @@ class Viewport {
         clamp(viewWidth, viewHeight, pictureWidth, pictureHeight)
     }
 
+    /**
+     * The picture pixel drawn at a point of the view.
+     *
+     * The inverse of [box], and clamped to the picture: asked for the middle of
+     * the pane it answers with whatever is drawn there, which is how the arrow
+     * can be pulled to the middle without moving the picture at all.
+     */
+    fun pictureAt(
+        x: Float,
+        y: Float,
+        viewWidth: Int,
+        viewHeight: Int,
+        pictureWidth: Int,
+        pictureHeight: Int,
+    ): Pair<Float, Float>? {
+        val box = box(viewWidth, viewHeight, pictureWidth, pictureHeight)
+        if (box.width <= 0f || box.height <= 0f) return null
+        val px = (x - box.left) * pictureWidth / box.width
+        val py = (y - box.top) * pictureHeight / box.height
+        return px.coerceIn(0f, pictureWidth - 1f) to py.coerceIn(0f, pictureHeight - 1f)
+    }
+
     /** Keeps the picture from being dragged off into empty space. */
     fun clamp(viewWidth: Int, viewHeight: Int, pictureWidth: Int, pictureHeight: Int) {
         val box = box(viewWidth, viewHeight, pictureWidth, pictureHeight)

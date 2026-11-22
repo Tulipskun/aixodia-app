@@ -151,4 +151,48 @@ class ViewportTest {
         // it may be panned.
         assertTrue(v.isZoomed)
     }
+
+    @Test
+    fun the_middle_of_the_pane_is_the_point_drawn_there() {
+        // Zooming pulls the arrow to the middle by moving the arrow, never the
+        // picture: the answer is whatever is drawn at the middle of the pane.
+        val v = viewport()
+        val fitted = v.pictureAt(viewW / 2f, viewH / 2f, viewW, viewH, picW, picH)!!
+        assertEquals(picW / 2f, fitted.first, 1f)
+        assertEquals(picH / 2f, fitted.second, 1f)
+
+        // Zoomed and slid so the arrow at picture x=900 is centred: the middle of
+        // the pane is that very pixel, so pulling the arrow there moves nothing.
+        v.actualSize(viewW, viewH, picW, picH)
+        v.followPointer(750f, 360f, viewW, viewH, picW, picH)
+        val zoomed = v.pictureAt(viewW / 2f, viewH / 2f, viewW, viewH, picW, picH)!!
+        assertEquals(750f, zoomed.first, 1f)
+        assertEquals(360f, zoomed.second, 1f)
+    }
+
+    @Test
+    fun a_pane_point_maps_back_to_the_pixel_drawn_under_it() {
+        val v = viewport()
+        v.actualSize(viewW, viewH, picW, picH)
+        v.followPointer(700f, 300f, viewW, viewH, picW, picH)
+        val box = v.box(viewW, viewH, picW, picH)
+        val scale = box.width / picW
+        // Any picture pixel, drawn where it is drawn, must map back to itself.
+        for (x in listOf(0f, 300f, 700f, 1279f)) {
+            val drawn = box.left + x * scale
+            val back = v.pictureAt(drawn, viewH / 2f, viewW, viewH, picW, picH)!!
+            assertEquals("pixel $x", x, back.first, 1f)
+        }
+    }
+
+    @Test
+    fun a_point_outside_the_picture_is_clamped_to_its_edge() {
+        val v = viewport()
+        // The letterbox bars at the top and bottom of a fitted picture: the arrow
+        // can never be pulled out of the picture itself.
+        val (_, top) = v.pictureAt(viewW / 2f, -50f, viewW, viewH, picW, picH)!!
+        assertEquals(0f, top, 1f)
+        val (_, bottom) = v.pictureAt(viewW / 2f, viewH + 50f, viewW, viewH, picW, picH)!!
+        assertEquals(picH - 1f, bottom, 1f)
+    }
 }
