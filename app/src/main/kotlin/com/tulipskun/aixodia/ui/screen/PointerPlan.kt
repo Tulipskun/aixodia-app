@@ -41,6 +41,67 @@ enum class InputMode(val stored: String, val label: String) {
  * here rather than inside the view is what lets it be checked without a touch
  * screen.
  */
+/**
+ * How far the arrow travels for a movement of the finger.
+ *
+ * A pad that moves the arrow exactly as far as the finger moves is unusable on a
+ * desktop wider than the phone: one flick crosses the screen and nothing can be
+ * landed on. RealVNC therefore moves it by *part* of the movement, and by more
+ * of it the faster the finger goes — slow for aiming, fast for travelling.
+ *
+ * The two ends of that curve were measured, not guessed: a stock RealVNC Viewer
+ * (4.9.6) connected to this machine's own server, with synthetic drags of known
+ * length and duration, moved the arrow:
+ *
+ * | finger            | arrow     | arrow per finger pixel |
+ * |-------------------|-----------|------------------------|
+ * | 100 px in 1000 ms | 38 px     | 0.38                   |
+ * | 100 px in 300 ms  | 34 px     | 0.34                   |
+ * | 300 px in 1500 ms | 138 px    | 0.46                   |
+ * | 400 px in 200 ms  | 200 px    | 0.50                   |
+ * | 100 px in 100 ms  | 60 px     | 0.60                   |
+ *
+ * Those are desktop pixels for a picture drawn smaller than the desktop, so in
+ * terms of the picture the arrow covers between a fifth and two fifths of the
+ * finger's travel. That is what the two constants below say, and the ramp
+ * between them is what makes a careful movement careful.
+ */
+object PointerSpeed {
+    /** Share of the finger's travel taken at a crawl, for aiming. */
+    const val SLOW = 0.28f
+
+    /** Share taken at a flick, for crossing the screen. */
+    const val FAST = 0.42f
+
+    /** The speed, in view pixels per millisecond, at which [FAST] is reached. */
+    const val FAST_AT = 1.0f
+
+    /**
+     * The share of a movement to apply at [pxPerMs].
+     *
+     * Linear between the two measured ends: below a crawl it is [SLOW], above a
+     * flick it is [FAST], and between them it rises with the speed, which is the
+     * whole of what "acceleration" means here.
+     */
+    fun gain(pxPerMs: Float): Float {
+        if (pxPerMs <= 0f) return SLOW
+        val ramp = (pxPerMs / FAST_AT).coerceIn(0f, 1f)
+        return SLOW + (FAST - SLOW) * ramp
+    }
+
+    /**
+     * Whole pixels to move by, and the fraction left over.
+     *
+     * The remainder is kept rather than rounded away: at [SLOW] one event of a
+     * slow drag is a fraction of a pixel, and dropping it every time would make
+     * a careful movement move nothing at all.
+     */
+    fun spend(owed: Float): Pair<Int, Float> {
+        val whole = owed.toInt()
+        return whole to owed - whole
+    }
+}
+
 object PointerPlan {
     /** The buttons the bar offers, in the order it shows them. */
     val BUTTONS: List<String> = listOf("left", "middle", "right")

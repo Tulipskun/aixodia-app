@@ -119,4 +119,55 @@ class PointerPlanTest {
             ),
         )
     }
+
+    @Test
+    fun a_crawl_keeps_a_fifth_of_the_movement_and_a_flick_two_fifths() {
+        // The two ends of the curve, from RealVNC's own measured table. A slow
+        // hand gets fine aim; a fast one crosses the screen.
+        assertEquals(PointerSpeed.SLOW, PointerSpeed.gain(0f), 0.0001f)
+        // Just off a standstill it has already begun to rise, which is the point
+        // of the ramp: there is no speed at which the arrow ignores the hand.
+        assertTrue(PointerSpeed.gain(0.05f) > PointerSpeed.SLOW)
+        assertEquals(PointerSpeed.FAST, PointerSpeed.gain(PointerSpeed.FAST_AT), 0.0001f)
+        assertEquals(PointerSpeed.FAST, PointerSpeed.gain(9f), 0.0001f)
+    }
+
+    @Test
+    fun the_gain_rises_with_the_speed_and_never_falls() {
+        var previous = PointerSpeed.gain(0f)
+        var speed = 0f
+        while (speed <= 1.5f) {
+            val gain = PointerSpeed.gain(speed)
+            assertTrue("gain fell at $speed", gain >= previous - 0.0001f)
+            previous = gain
+            speed += 0.05f
+        }
+        // Halfway up the ramp is halfway between the two measured ends.
+        assertEquals(
+            (PointerSpeed.SLOW + PointerSpeed.FAST) / 2f,
+            PointerSpeed.gain(PointerSpeed.FAST_AT / 2f),
+            0.0001f,
+        )
+    }
+
+    @Test
+    fun a_fraction_of_a_pixel_is_kept_not_thrown_away() {
+        // At the slow end one event of a careful drag is well under a pixel.
+        // Dropping it would make a slow drag move nothing at all.
+        val (step, left) = PointerSpeed.spend(0.4f)
+        assertEquals(0, step)
+        assertEquals(0.4f, left, 0.0001f)
+        val (next, rest) = PointerSpeed.spend(left + 0.4f)
+        assertEquals(0, next)
+        assertEquals(0.8f, rest, 0.0001f)
+        val (third, _) = PointerSpeed.spend(rest + 0.4f)
+        assertEquals(1, third)
+    }
+
+    @Test
+    fun a_movement_to_the_left_is_spent_to_the_left() {
+        val (step, left) = PointerSpeed.spend(-2.5f)
+        assertEquals(-2, step)
+        assertEquals(-0.5f, left, 0.0001f)
+    }
 }

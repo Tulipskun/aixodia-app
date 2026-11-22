@@ -191,6 +191,26 @@ class ScreenView(context: Context) : View(context) {
     private var owedScrollY = 0f
 
     /**
+     * Where the arrow is while a finger is moving it, in picture pixels.
+     *
+     * The machine sends its pointer back with every frame, but that echo is a
+     * frame old. Adding a movement to it — as this view used to — makes the
+     * arrow's travel depend on how fast the picture is arriving: a slow drag
+     * moved it 0.3 of the finger's travel and a fast one 2.8 times as far, which
+     * is neither predictable nor the same as RealVNC. The arrow therefore has a
+     * position of its own for the length of a touch, seeded from the machine
+     * when the touch begins, and the machine's echoes are left to draw it.
+     */
+    private var pointerX = -1
+    private var pointerY = -1
+    /** Movement owed to the arrow but not yet worth a whole pixel. */
+    private var owedMoveX = 0f
+    private var owedMoveY = 0f
+    /** The finger's speed, smoothed, in view pixels per millisecond. */
+    private var moveSpeed = 0f
+    private var lastMoveAt = 0L
+
+    /**
      * True when the picture is a decoded video underneath this view rather than
      * a bitmap drawn by it.
      *
@@ -258,7 +278,7 @@ class ScreenView(context: Context) : View(context) {
      */
     fun holdButton(button: String) {
         val socket = socket ?: return
-        val at = surface?.cursor ?: return
+        val at = arrow() ?: return
         heldButton = button
         socket.down(at.first, at.second, button)
     }
@@ -267,7 +287,7 @@ class ScreenView(context: Context) : View(context) {
     fun releaseButton() {
         val socket = socket ?: return
         val button = heldButton ?: return
-        val at = surface?.cursor
+        val at = arrow()
         heldButton = null
         at?.let { socket.up(it.first, it.second, button) }
     }
@@ -465,6 +485,21 @@ class ScreenView(context: Context) : View(context) {
                 fingersAtStart = 1
                 maxFingers = 1
                 touchPressed = false
+                // The arrow keeps the position it had. The machine's opinion of
+                // where it is arrives with the picture, and the picture only
+                // repaints when pixels change — a moving pointer changes none —
+                // so that opinion is often a whole drag out of date. It is
+                // believed once, when there is nothing better.
+                if (pointerX < 0 || pointerY < 0) {
+                    surface?.cursor?.let { (x, y) ->
+                        pointerX = x
+                        pointerY = y
+                    }
+                }
+                owedMoveX = 0f
+                owedMoveY = 0f
+                moveSpeed = 0f
+                lastMoveAt = event.eventTime
                 // A second tap that lands soon after the first is the start of a
                 // double tap, which in this viewer is click-and-hold.
                 secondTap = downAt - lastTapAt <= DOUBLE_TAP_MS
@@ -571,6 +606,8 @@ class ScreenView(context: Context) : View(context) {
         val socket = socket ?: return
         val at = pointerFor(event) ?: return
         touchPressed = true
+        pointerX = at.first
+        pointerY = at.second
         markCursor(at.first, at.second)
         socket.down(at.first, at.second, "left")
     }
@@ -582,6 +619,8 @@ class ScreenView(context: Context) : View(context) {
         if (abs(event.x - downX) > TOUCH_SLOP || abs(event.y - downY) > TOUCH_SLOP) {
             movedEnough = true
         }
+        pointerX = at.first
+        pointerY = at.second
         markCursor(at.first, at.second)
         sendMove(socket, at.first, at.second)
     }
@@ -627,7 +666,7 @@ class ScreenView(context: Context) : View(context) {
     }
 
     /**
-     * One finger drags: the pointer moves by how far the finger moved.
+     * One finger drags: the pointer moves by part of how far the finger moved.
      *
      * The picture is used as a drag pad, not as a touch screen. That is what the
      * viewer's own code does, and it is worth being exact about where it shows:
@@ -637,6 +676,10 @@ class ScreenView(context: Context) : View(context) {
      * it to the current view offset and clamping it to the desktop. Placing the
      * pointer at the touch instead would make it jump under the finger and would
      * lose the whole desktop the moment the finger leaves the picture.
+     *
+     * How much of the movement is taken is [PointerSpeed]'s question, and the
+     * answer grows with how fast the finger is going: slow for aiming, fast for
+     * crossing the screen. The remainder is carried, so a crawl still creeps.
      */
     private fun moveOneFinger(event: MotionEvent) {
         val socket = socket ?: return
@@ -653,18 +696,34 @@ class ScreenView(context: Context) : View(context) {
             movedEnough = true
         }
 
-        // The movement since the last event, in the machine's pixels. This is the
-        // difference the viewer computes, and it is added to where the pointer
-        // already is — not used as an absolute position.
-        val from = surface?.cursor ?: (picture.width / 2 to picture.height / 2)
-        val stepX = ((event.x - lastX) * scaleX).roundToInt()
-        val stepY = ((event.y - lastY) * scaleY).roundToInt()
+        val dxView = event.x - lastX
+        val dyView = event.y - lastY
         lastX = event.x
         lastY = event.y
         if (movedEnough) dragged = true
 
-        val wantX = (from.first + stepX).coerceIn(0, picture.width - 1)
-        val wantY = (from.second + stepY).coerceIn(0, picture.height - 1)
+        // The finger's speed, smoothed a little: a single event's own speed is
+        // noise on a touch panel, and the gain changes with it.
+        val gap = (event.eventTime - lastMoveAt).coerceAtLeast(1L)
+        lastMoveAt = event.eventTime
+        val instant = kotlin.math.hypot(dxView, dyView) / gap
+        moveSpeed += (instant - moveSpeed) * SPEED_SMOOTHING
+
+        val gain = PointerSpeed.gain(moveSpeed)
+        owedMoveX += dxView * scaleX * gain
+        owedMoveY += dyView * scaleY * gain
+        val (stepX, leftX) = PointerSpeed.spend(owedMoveX)
+        val (stepY, leftY) = PointerSpeed.spend(owedMoveY)
+        owedMoveX = leftX
+        owedMoveY = leftY
+
+        // Added to where the arrow already is — not used as an absolute position.
+        val fromX = if (pointerX >= 0) pointerX else picture.width / 2
+        val fromY = if (pointerY >= 0) pointerY else picture.height / 2
+        val wantX = (fromX + stepX).coerceIn(0, picture.width - 1)
+        val wantY = (fromY + stepY).coerceIn(0, picture.height - 1)
+        pointerX = wantX
+        pointerY = wantY
         markCursor(wantX, wantY)
 
         // Held down for a double-tap-and-drag: the button stays pressed and the
@@ -675,7 +734,7 @@ class ScreenView(context: Context) : View(context) {
     /** A tap clicks at the pointer, never at the finger. */
     private fun endOneFinger(event: MotionEvent) {
         val socket = socket ?: return
-        val at = surface?.cursor
+        val at = arrow()
         val now = System.currentTimeMillis()
 
         if (held) {
@@ -745,7 +804,7 @@ class ScreenView(context: Context) : View(context) {
             owedScrollY += focusNowY - scrollFromY
             scrollFromX = focusNowX
             scrollFromY = focusNowY
-            val (px, py) = surface?.cursor ?: (0 to 0)
+            val (px, py) = arrow() ?: (0 to 0)
             val across = PointerPlan.spend(owedScrollX, SCROLL_STEP_PX)
             if (across != 0) {
                 owedScrollX -= across * SCROLL_STEP_PX
@@ -773,7 +832,7 @@ class ScreenView(context: Context) : View(context) {
     private fun keepArrowVisible(event: MotionEvent) {
         val socket = socket ?: return
         val picture = surface?.bitmap() ?: return
-        val at = surface?.cursor ?: return
+        val at = arrow() ?: return
         if (picture.width <= 0 || picture.height <= 0) return
         val box = pictureRect(picture.width, picture.height)
         if (box.width() <= 0f || box.height() <= 0f) return
@@ -787,6 +846,8 @@ class ScreenView(context: Context) : View(context) {
             clear = ARROW_CLEARANCE_PX * resources.displayMetrics.density,
         ) ?: return
         val to = toScreen(moved.first, moved.second) ?: return
+        pointerX = to.first
+        pointerY = to.second
         markCursor(to.first, to.second)
         sendMove(socket, to.first, to.second)
     }
@@ -795,6 +856,20 @@ class ScreenView(context: Context) : View(context) {
     private fun markCursor(x: Int, y: Int) {
         surface?.cursorTo(x to y)
         postInvalidateOnAnimation()
+    }
+
+    /**
+     * Where the arrow is as far as the finger is concerned.
+     *
+     * While a finger owns it that is the local copy, because the machine's echo
+     * is a frame behind and adding movements to a stale position is what made a
+     * drag travel further the faster it went. With no finger down the machine's
+     * word is the only one, and it also catches a pointer moved by another
+     * viewer.
+     */
+    private fun arrow(): Pair<Int, Int>? {
+        if (pointerX >= 0 && pointerY >= 0) return pointerX to pointerY
+        return surface?.cursor
     }
 
     /**
@@ -868,6 +943,14 @@ class ScreenView(context: Context) : View(context) {
          * machine can redraw costs a queue and gains nothing visible.
          */
         private const val MOVE_INTERVAL_MS = 16L
+
+        /**
+         * How much of each new speed reading is believed, from 0 to 1.
+         *
+         * A touch panel's own speed between two events is noisy; a quarter of
+         * each reading is enough to follow a hand without following the noise.
+         */
+        private const val SPEED_SMOOTHING = 0.25f
 
         /** How soon a second tap counts as a double tap. */
         private const val DOUBLE_TAP_MS = 300L
