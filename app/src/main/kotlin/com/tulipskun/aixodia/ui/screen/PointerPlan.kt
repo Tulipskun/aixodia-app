@@ -71,6 +71,63 @@ object PointerSpeed {
      */
     const val FAST_AT = 0.5f
 
+    /** The stretch of a drag whose speed decides the gain, in milliseconds. */
+    const val WINDOW_MS = 50L
+
+    /** No hand moves faster than this, in view pixels per millisecond. */
+    const val CEILING = 3f
+
+    /**
+     * The speed of a hand, measured over the last stretch of a drag.
+     *
+     * A window rather than the gap between two samples. A touch panel reports in
+     * bursts, so that gap says nothing about the hand: measured on the phone with
+     * injected drags of a fixed two hundred pixels, the same gesture travelled
+     * 0.58 or 0.98 pixels per finger pixel depending only on how the framework
+     * happened to batch it, which is exactly the "mouse is abnormally slow, then
+     * suddenly fast" the reader reported. Distance over a window is the speed a
+     * hand actually has.
+     *
+     * The window is re-based, not slid: every [WINDOW_MS] the speed is measured
+     * afresh from where the finger was then to where it is now, and between
+     * those measurements the last one stands, so a burst cannot fake a flick.
+     */
+    class SpeedWindow {
+        private var started = false
+        private var at = 0L
+        private var x = 0f
+        private var y = 0f
+        private var speed = 0f
+
+        /** Forgets the last gesture, so the next one starts from a standstill. */
+        fun reset() {
+            started = false
+            at = 0L
+            speed = 0f
+        }
+
+        /** The hand's speed at the moment it reaches [x], [y], in pixels per ms. */
+        fun measure(timeMs: Long, x: Float, y: Float): Float {
+            // Not `at == 0L`: a gesture can begin at uptime zero, and that would
+            // make every sample look like the first one.
+            if (!started) {
+                started = true
+                at = timeMs
+                this.x = x
+                this.y = y
+                return speed
+            }
+            val elapsed = timeMs - at
+            if (elapsed < WINDOW_MS) return speed
+            val travelled = kotlin.math.hypot(x - this.x, y - this.y)
+            at = timeMs
+            this.x = x
+            this.y = y
+            speed = (travelled / elapsed.coerceAtLeast(1L)).coerceAtMost(CEILING)
+            return speed
+        }
+    }
+
     /**
      * The share of a movement to apply at [pxPerMs].
      *

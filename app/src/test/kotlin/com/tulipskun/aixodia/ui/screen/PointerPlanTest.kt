@@ -179,4 +179,47 @@ class PointerPlanTest {
         assertEquals(-2, step)
         assertEquals(-0.5f, left, 0.0001f)
     }
+
+    @Test
+    fun the_same_drag_reads_the_same_speed_however_its_samples_arrive() {
+        // A hundred pixels in two hundred milliseconds, once reported in five
+        // samples and once in fifty: the hand did the same thing, so the gain
+        // must be the same. This is what a sample gap could not give.
+        fun speedAfter(steps: Int): Float {
+            val window = PointerSpeed.SpeedWindow()
+            var speed = 0f
+            for (i in 0..steps) {
+                val k = i.toFloat() / steps
+                speed = window.measure((200 * k).toLong(), x = 100f * k, y = 0f)
+            }
+            return speed
+        }
+        assertEquals(speedAfter(5), speedAfter(50), 0.02f)
+    }
+
+    @Test
+    fun a_burst_within_the_window_cannot_fake_a_flick() {
+        // Nine samples crammed into twelve milliseconds travel eighty pixels and
+        // would read as seven pixels a millisecond, which no hand does. The
+        // window has not elapsed, so the speed stands where it was.
+        val window = PointerSpeed.SpeedWindow()
+        window.measure(0, x = 0f, y = 0f)
+        val fresh = window.measure(60, x = 10f, y = 0f)
+        assertEquals(10f / 60f, fresh, 0.001f)
+        val burst = window.measure(72, x = 90f, y = 0f)
+        assertEquals(fresh, burst, 0.0001f)
+    }
+
+    @Test
+    fun speed_is_capped_and_starts_from_a_standstill() {
+        val window = PointerSpeed.SpeedWindow()
+        assertEquals(0f, window.measure(0, x = 0f, y = 0f), 0f)
+        assertEquals(
+            PointerSpeed.CEILING,
+            window.measure(60, x = 900f, y = 0f),
+            0.0001f,
+        )
+        window.reset()
+        assertEquals(0f, window.measure(400, x = 900f, y = 0f), 0f)
+    }
 }
