@@ -61,4 +61,46 @@ object PointerPlan {
         3 -> "middle"
         else -> "left"
     }
+
+    /**
+     * The notches a two-finger drag just earned, on either axis.
+     *
+     * RealVNC's own words: "place two fingers on the screen and drag up or down
+     * to scroll the current application vertically, or drag left or right to
+     * scroll horizontally." A single number cannot carry both, so the axes are
+     * independent: the movement is kept per axis and a step on one axis spends
+     * a notch on that axis only — a diagonal drag scrolls both, a sideways one
+     * scrolls the horizontal bar and not the page. The remainder is never
+     * dropped: it stays with the touch, so a slow drag scrolls slowly instead
+     * of dying under the very first threshold.
+     */
+    fun spend(accumulated: Float, step: Float): Int = (accumulated / step).toInt()
+
+    /**
+     * Where the arrow goes when a touch lands on top of it.
+     *
+     * RealVNC"s help says the cursor sits "offset from under your finger so you
+     * can always see it". In trackpad mode the arrow follows the finger
+     * relatively, so a touch can land exactly where the arrow is and hide it;
+     * this moves the arrow out to [clear] along the line from the finger
+     * through itself — the smallest move that shows it — or, when the arrow is
+     * exactly under the touch, up and to the left, which is where no hand is
+     * resting. Returns null when the arrow is already visible, so a finger
+     * nowhere near the arrow moves nothing until it drags.
+     */
+    fun clearOfFinger(
+        finger: Pair<Float, Float>,
+        arrow: Pair<Float, Float>,
+        clear: Float,
+    ): Pair<Float, Float>? {
+        val dx = arrow.first - finger.first
+        val dy = arrow.second - finger.second
+        if (dx * dx + dy * dy >= clear * clear) return null
+        val length = kotlin.math.hypot(dx, dy)
+        // A nudge needs a direction; an arrow under the touch has none, so it
+        // goes up-left, out from under the thumb.
+        val ux = if (length > 0.001f) dx / length else -1f
+        val uy = if (length > 0.001f) dy / length else -1f
+        return (finger.first + ux * clear) to (finger.second + uy * clear)
+    }
 }

@@ -30,6 +30,18 @@ import java.nio.ByteOrder
 import java.util.concurrent.atomic.AtomicInteger
 
 /**
+ * Which way a two-finger drag turns the wheel.
+ *
+ * X has four wheel buttons: 4 and 5 are up and down, 6 and 7 left and right.
+ * The engine only knows which to press if the client says which axis the
+ * fingers moved along.
+ */
+enum class ScrollAxis(val wire: String) {
+    VERTICAL("vertical"),
+    HORIZONTAL("horizontal"),
+}
+
+/**
  * A terminal-shaped link to the engine's screen, instead of a shell.
  *
  * The engine sends the picture in tiles: a header, a tile count, then each
@@ -345,8 +357,8 @@ class ScreenSocket(
                 """"button":"$button","duration_ms":$durationMs}""",
         )
 
-    fun wheel(x: Int, y: Int, delta: Int) =
-        send("""{"type":"wheel","x":$x,"y":$y,"delta":$delta}""")
+    fun wheel(x: Int, y: Int, delta: Int, axis: ScrollAxis = ScrollAxis.VERTICAL) =
+        send("""{"type":"wheel","x":$x,"y":$y,"delta":$delta,"axis":"${axis.wire}"}""")
 
     fun key(keysym: String, mods: List<String> = emptyList()) {
         val held = mods.joinToString(",") { "\"$it\"" }

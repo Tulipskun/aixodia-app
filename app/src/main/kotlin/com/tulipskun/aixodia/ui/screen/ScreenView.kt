@@ -10,6 +10,7 @@ import android.graphics.RectF
 import android.view.MotionEvent
 import android.view.View
 import com.tulipskun.aixodia.data.remote.ScreenSocket
+import com.tulipskun.aixodia.data.remote.ScrollAxis
 import kotlin.math.abs
 import kotlin.math.max
 import kotlin.math.min
@@ -185,6 +186,9 @@ class ScreenView(context: Context) : View(context) {
     /** Where two fingers started, so their movement can be measured. */
     private var twoFingerX = 0f
     private var twoFingerY = 0f
+    /** Movement a two-finger drag has made but not yet spent on a notch. */
+    private var owedScrollX = 0f
+    private var owedScrollY = 0f
 
     /**
      * True when the picture is a decoded video underneath this view rather than
@@ -468,7 +472,17 @@ class ScreenView(context: Context) : View(context) {
                 // Touch mode is the screen itself: the press happens where the
                 // finger lands, and it stays pressed until the finger leaves, so
                 // a slow movement is a drag and a quick one is a click.
-                if (inputMode == InputMode.DIRECT) pressDirect(event)
+                if (inputMode == InputMode.DIRECT) {
+                    pressDirect(event)
+                } else {
+                    // The pad's arrow follows the finger relatively, so a touch
+                    // can land on top of it. RealVNC keeps the cursor "offset
+                    // from under your finger so you can always see it"; the same
+                    // rule here, applied once when the gesture starts rather than
+                    // during it, because an arrow that keeps fleeing a moving
+                    // thumb is harder to aim than one that is briefly hidden.
+                    keepArrowVisible(event)
+                }
                 // A tap is remembered so a second one can turn it into a double.
                 return true
             }
@@ -494,7 +508,9 @@ class ScreenView(context: Context) : View(context) {
                     twoFingerX = focusX(event)
                     twoFingerY = focusY(event)
                     scrollFromY = focusY(event)
-                    scrollFromX = focusY(event)
+                    scrollFromX = focusX(event)
+                    owedScrollX = 0f
+                    owedScrollY = 0f
                     scrolled = false
                 }
                 return true
@@ -716,24 +732,63 @@ class ScreenView(context: Context) : View(context) {
         applyZoom(wanted, pinchFocusX, pinchFocusY, pinchStartPanX + dx, pinchStartPanY + dy)
 
         // Scrolling the machine is a separate thing from moving the picture, and
-        // RealVNC offers it with the same two fingers. It is sent when the pair
-        // moves up or down without spreading, so it does not fight the pinch.
+        // RealVNC offers it with the same two fingers, both ways: "drag up or
+        // down to scroll the current application vertically, or drag left or
+        // right to scroll horizontally". The two axes are counted apart and
+        // spent apart, so a sideways drag never moves the page and a diagonal
+        // one does both; the remainder stays with the touch, so a slow drag
+        // scrolls slowly instead of dying under the first threshold.
         if (!pinched || abs(wanted - pinchStartZoom) < 0.01f) {
-            val upDown = focusY(event) - scrollFromY
-            val leftRight = focusX(event) - scrollFromX
-            if (abs(upDown) > SCROLL_STEP_PX || abs(leftRight) > SCROLL_STEP_PX) {
-                val (px, py) = surface?.cursor ?: (0 to 0)
-                val delta = if (abs(upDown) >= abs(leftRight)) {
-                    if (upDown > 0) 1 else -1
-                } else {
-                    if (leftRight > 0) 1 else -1
-                }
-                socket.wheel(px, py, delta)
-                scrollFromY = focusY(event)
-                scrollFromX = focusX(event)
+            val focusNowX = focusX(event)
+            val focusNowY = focusY(event)
+            owedScrollX += focusNowX - scrollFromX
+            owedScrollY += focusNowY - scrollFromY
+            scrollFromX = focusNowX
+            scrollFromY = focusNowY
+            val (px, py) = surface?.cursor ?: (0 to 0)
+            val across = PointerPlan.spend(owedScrollX, SCROLL_STEP_PX)
+            if (across != 0) {
+                owedScrollX -= across * SCROLL_STEP_PX
+                socket.wheel(px, py, across, axis = ScrollAxis.HORIZONTAL)
+                scrolled = true
+            }
+            val down = PointerPlan.spend(owedScrollY, SCROLL_STEP_PX)
+            if (down != 0) {
+                owedScrollY -= down * SCROLL_STEP_PX
+                socket.wheel(px, py, down, axis = ScrollAxis.VERTICAL)
                 scrolled = true
             }
         }
+    }
+
+    /**
+     * Moves the arrow out from under a touch that landed on top of it.
+     *
+     * Only in the pad mode: in touch mode the press belongs where the finger is
+     * and moving the pointer would move the click. The arrow is nudged to the
+     * nearest visible place — along the line from the finger through itself —
+     * and the machine is told, because a cursor that only looks moved is a
+     * cursor that clicks where the picture no longer shows it.
+     */
+    private fun keepArrowVisible(event: MotionEvent) {
+        val socket = socket ?: return
+        val picture = surface?.bitmap() ?: return
+        val at = surface?.cursor ?: return
+        if (picture.width <= 0 || picture.height <= 0) return
+        val box = pictureRect(picture.width, picture.height)
+        if (box.width() <= 0f || box.height() <= 0f) return
+        val scaleX = box.width() / picture.width
+        val scaleY = box.height() / picture.height
+        val arrowX = box.left + at.first * scaleX
+        val arrowY = box.top + at.second * scaleY
+        val moved = PointerPlan.clearOfFinger(
+            finger = event.x to event.y,
+            arrow = arrowX to arrowY,
+            clear = ARROW_CLEARANCE_PX * resources.displayMetrics.density,
+        ) ?: return
+        val to = toScreen(moved.first, moved.second) ?: return
+        markCursor(to.first, to.second)
+        sendMove(socket, to.first, to.second)
     }
 
     /** Keeps the drawn arrow where the local finger just put it. */
@@ -820,5 +875,13 @@ class ScreenView(context: Context) : View(context) {
         /** The arrow's size at 1:1, and the largest it is allowed to grow. */
         private const val CURSOR_SIZE = 14f
         private const val CURSOR_MAX = 30f
+
+        /**
+         * How far from a finger the arrow is kept, in dp.
+         *
+         * A thumb covers roughly this much of the picture, so an arrow nearer
+         * than this to the touch point is an arrow nobody can see.
+         */
+        private const val ARROW_CLEARANCE_PX = 44f
     }
 }
