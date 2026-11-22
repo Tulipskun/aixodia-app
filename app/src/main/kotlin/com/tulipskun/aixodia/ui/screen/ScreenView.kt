@@ -633,13 +633,8 @@ class ScreenView(context: Context) : View(context) {
     }
 
     /**
-     * Sends a pointer move, at most once a frame.
-     *
-     * A held drag reports motion at the touch panel's rate, not the machine's,
-     * and a queue of positions the pointer has already left only adds lag to the
-     * window being dragged. The newest position is always the one sent.
+     * Sends the pointer's position now, whatever the throttle was waiting for.
      */
-    /** Sends the pointer's position now, whatever the throttle was waiting for. */
     private fun flushMove() {
         val socket = socket ?: return
         val at = arrow() ?: return
@@ -649,6 +644,13 @@ class ScreenView(context: Context) : View(context) {
         pointerSettled = true
     }
 
+    /**
+     * Sends a pointer move, at most once a frame.
+     *
+     * A held drag reports motion at the touch panel's rate, not the machine's,
+     * and a queue of positions the pointer has already left only adds lag to the
+     * window being dragged. The newest position is always the one sent.
+     */
     private fun sendMove(socket: ScreenSocket, x: Int, y: Int) {
         val now = System.currentTimeMillis()
         if (now - lastMoveSent >= MOVE_INTERVAL_MS) {
