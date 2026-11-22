@@ -4,7 +4,6 @@ import android.graphics.SurfaceTexture
 import android.view.Surface
 import android.view.TextureView
 import androidx.compose.foundation.background
-import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -17,11 +16,8 @@ import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.windowInsetsPadding
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -34,8 +30,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.input.pointer.PointerEventType
-import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.Lifecycle
@@ -43,7 +37,6 @@ import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.tulipskun.aixodia.data.remote.ScreenSocket
-import kotlin.math.roundToInt
 
 /**
  * The engine's screen, on the phone, under a finger.
@@ -72,7 +65,12 @@ fun ScreenPanel(
     var mode by remember { mutableStateOf(InputMode.TRACKPAD) }
     var codec by remember { mutableStateOf("jpeg") }
     var keyboardShown by remember { mutableStateOf(false) }
-    var showControls by remember { mutableStateOf(false) }
+    // The viewer's rail: closed until the three dots are pressed, and each pane
+    // it opens is remembered separately, the way a viewer does — the mouse pane
+    // can stay up while the settings pane is opened and closed again.
+    var railOpen by rememberSaveable { mutableStateOf(false) }
+    var mouseOpen by rememberSaveable { mutableStateOf(false) }
+    var settingsOpen by rememberSaveable { mutableStateOf(false) }
     val surface = remember { ScreenSurface() }
     var view by remember { mutableStateOf<ScreenView?>(null) }
     // The video decoder, created only when the engine says it is sending video.
@@ -205,8 +203,8 @@ fun ScreenPanel(
     }
 
     // The system bars are drawn over the app (edge-to-edge), so the picture is
-    // laid out inside them: without this the quality strip sits under the
-    // navigation bar and cannot be reached.
+    // laid out inside them: without this the rail sits under the navigation bar
+    // and cannot be reached.
     Column(modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing)) {
         Box(Modifier.weight(1f).fillMaxWidth()) {
             // The decoded video sits under the touch view, which is transparent
@@ -264,37 +262,52 @@ fun ScreenPanel(
                     contentAlignment = Alignment.Center,
                 ) { CircularProgressIndicator() }
             }
+            // The viewer's own chrome: a draggable three-dot rail that opens into
+            // a black pill, exactly where RealVNC puts it, so the picture is the
+            // screen rather than the top of a form.
+            SessionChrome(
+                open = railOpen,
+                mouse = mouseOpen,
+                settings = settingsOpen,
+                keyboard = keyboardShown,
+                quality = quality,
+                mode = mode,
+                codec = codec,
+                onOpen = { railOpen = it },
+                onMouse = { mouseOpen = it },
+                onSettings = { settingsOpen = it },
+                onKeyboard = { keyboardShown = !keyboardShown },
+                onLeave = onLeave,
+                onScroll = { notches ->
+                    val (x, y) = surface.cursor
+                        ?: hello?.let { it.width / 2 to it.height / 2 }
+                        ?: (0 to 0)
+                    socket.wheel(x, y, notches)
+                },
+                onMode = { wanted ->
+                    mode = wanted
+                    socket.keepInputMode(wanted.stored)
+                },
+                onCodec = { wanted ->
+                    codec = wanted
+                    socket.settings(codec = wanted)
+                    socket.keepCodec(wanted)
+                },
+                onQuality = { value ->
+                    quality = value
+                    socket.settings(quality = value)
+                },
+                onQualitySettled = { socket.keepQuality(quality) },
+                onFit = {
+                    if (view?.isActualSize() == true) view?.fitScreen() else view?.actualSize()
+                },
+                onHold = { button -> view?.holdButton(button) },
+                onRelease = { view?.releaseButton() },
+            )
         }
-        ScreenBar(
-            hello = hello,
-            state = state,
-            quality = quality,
-            mode = mode,
-            codec = codec,
-            keyboard = keyboardShown,
-            expanded = showControls,
-            socket = socket,
-            onLeave = onLeave,
-            onToggle = { showControls = !showControls },
-            onKeyboard = { keyboardShown = !keyboardShown },
-            onQuality = { value ->
-                quality = value
-                socket.settings(quality = value)
-            },
-            onQualitySettled = { socket.keepQuality(quality) },
-            onMode = { wanted ->
-                mode = wanted
-                socket.keepInputMode(wanted.stored)
-            },
-            onCodec = { wanted ->
-                codec = wanted
-                socket.settings(codec = wanted)
-                socket.keepCodec(wanted)
-            },
-            onHold = { button -> view?.holdButton(button) },
-            onRelease = { view?.releaseButton() },
-            onFit = { if (view?.isActualSize() == true) view?.fitScreen() else view?.actualSize() },
-        )
+        if (keyboardShown) {
+            KeyboardBar(socket)
+        }
     }
 }
 
@@ -308,192 +321,3 @@ private fun Centered(text: String) {
         )
     }
 }
-
-/**
- * The strip under the picture: where back goes, what the link is doing, and the
- * controls a phone cannot do without — how a finger becomes a pointer, which
- * mouse button is down, how sharp the picture is, and which codec carries it.
- */
-@Composable
-private fun ScreenBar(
-    hello: ScreenSocket.Hello?,
-    state: ScreenSocket.State,
-    quality: Int,
-    mode: InputMode,
-    codec: String,
-    keyboard: Boolean,
-    expanded: Boolean,
-    socket: ScreenSocket,
-    onLeave: () -> Unit,
-    onToggle: () -> Unit,
-    onKeyboard: () -> Unit,
-    onQuality: (Int) -> Unit,
-    onQualitySettled: () -> Unit,
-    onMode: (InputMode) -> Unit,
-    onCodec: (String) -> Unit,
-    onHold: (String) -> Unit,
-    onRelease: () -> Unit,
-    onFit: () -> Unit,
-) {
-    Column(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp)) {
-        Row(
-            Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                // The screen is opened from an engine card, so the way back is the
-                // engine list — the same place the terminal's back goes, and not
-                // the chat, which is a different thing about the same machine.
-                Text(
-                    "←",
-                    style = MaterialTheme.typography.titleMedium,
-                    modifier = Modifier
-                        .padding(end = 14.dp)
-                        .pointerTap(onLeave, size = 20.dp),
-                )
-                Text(
-                    when {
-                        // A still screen sends nothing, so "open" is the only
-                        // honest word for a link that is up but quiet.
-                        state == ScreenSocket.State.OPEN && hello != null ->
-                            "${hello.width}×${hello.height} · ${hello.fps}fps"
-                        state == ScreenSocket.State.CLOSED -> "not connected"
-                        else -> "connecting…"
-                    },
-                    style = MaterialTheme.typography.labelMedium,
-                )
-            }
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                // The keys a phone keyboard does not have: Escape, Tab, arrows,
-                // function keys, and a field that types any language.
-                Text(
-                    "⌨",
-                    style = MaterialTheme.typography.titleMedium,
-                    modifier = Modifier
-                        .padding(end = 16.dp)
-                        .pointerTap(onKeyboard, size = 20.dp),
-                )
-                Text(
-                    "${quality}%",
-                    style = MaterialTheme.typography.labelMedium,
-                )
-            }
-        }
-        // The controls no phone can assume: the input mode, the button being
-        // held, the fit, and the codec. A row narrow enough to need no drawer;
-        // scrolling moves left and right within it.
-        Row(
-            Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
-            horizontalArrangement = Arrangement.spacedBy(6.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Chip(selected = mode == InputMode.TRACKPAD, label = "trackpad", onTap = { onMode(InputMode.TRACKPAD) })
-            Chip(selected = mode == InputMode.DIRECT, label = "touch", onTap = { onMode(InputMode.DIRECT) })
-            Gap()
-            val buttons = PointerPlan.BUTTONS
-            for (name in buttons) {
-                HoldChip(label = PointerPlan.label(name), onHold = { onHold(name) }, onRelease = onRelease)
-            }
-            Gap()
-            Chip(selected = false, label = "fit · 1:1", onTap = { onFit() })
-            Gap()
-            Chip(selected = codec == "h264", label = "h264", onTap = { onCodec("h264") })
-            Chip(selected = codec != "h264", label = "jpeg", onTap = { onCodec("jpeg") })
-        }
-        if (keyboard) {
-            KeyboardBar(socket)
-        }
-        if (expanded) {
-            Slider(
-                value = quality.toFloat(),
-                onValueChange = { onQuality(it.roundToInt()) },
-                onValueChangeFinished = onQualitySettled,
-                valueRange = 10f..95f,
-                modifier = Modifier.fillMaxWidth(),
-            )
-        } else {
-            Text(
-                "tap to adjust quality",
-                style = MaterialTheme.typography.labelSmall,
-                modifier = Modifier.padding(top = 2.dp).pointerTap(onToggle, size = 14.dp),
-            )
-        }
-    }
-}
-
-/** One labelled option, highlighted while it is the one chosen. */
-/** A thin rule between groups of controls. */
-@Composable
-private fun Gap() {
-    Box(
-        Modifier.width(1.dp).height(16.dp).background(MaterialTheme.colorScheme.outlineVariant),
-    )
-}
-
-@Composable
-private fun Chip(selected: Boolean, label: String, onTap: () -> Unit) {
-    val background =
-        if (selected) MaterialTheme.colorScheme.primaryContainer
-        else MaterialTheme.colorScheme.surfaceVariant
-    Text(
-        label,
-        style = MaterialTheme.typography.labelMedium,
-        color = if (selected) MaterialTheme.colorScheme.onPrimaryContainer
-        else MaterialTheme.colorScheme.onSurfaceVariant,
-        modifier = Modifier
-            .background(background, RoundedCornerShape(8.dp))
-            .padding(horizontal = 10.dp, vertical = 5.dp)
-            .pointerTap(onTap, size = 14.dp),
-    )
-}
-
-/**
- * A mouse button that stays down for as long as it is pressed.
- *
- * This is the viewer's mouse panel: hold it, drag with one finger, let go — a
- * window is carried, not clicked.
- */
-@Composable
-private fun HoldChip(label: String, onHold: () -> Unit, onRelease: () -> Unit) {
-    Text(
-        label,
-        style = MaterialTheme.typography.labelMedium,
-        modifier = Modifier
-            .background(MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(8.dp))
-            .padding(horizontal = 12.dp, vertical = 5.dp)
-            .pointerInput(label) {
-                awaitPointerEventScope {
-                    while (true) {
-                        val event = awaitPointerEvent()
-                        if (event.type != PointerEventType.Press) continue
-                        onHold()
-                        // Hold the button for the whole press, even if the finger
-                        // wanders; release when the finger lifts — and on the way
-                        // out too, because a button left down on the machine is a
-                        // window being dragged by nobody.
-                        try {
-                            while (true) {
-                                val next = awaitPointerEvent()
-                                if (next.type == PointerEventType.Release) break
-                                if (next.changes.all { !it.pressed }) break
-                            }
-                        } finally {
-                            onRelease()
-                        }
-                    }
-                }
-            },
-    )
-}
-
-@Composable
-private fun Modifier.pointerTap(onTap: () -> Unit, size: androidx.compose.ui.unit.Dp): Modifier =
-    this.pointerInput(size) {
-        awaitPointerEventScope {
-            while (true) {
-                val event = awaitPointerEvent()
-                if (event.type == PointerEventType.Press) onTap()
-            }
-        }
-    }.padding(vertical = 2.dp)
