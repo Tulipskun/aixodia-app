@@ -235,4 +235,19 @@ class PointerPlanTest {
         assertFalse(PointerPlan.carriesTwo(1))
         assertFalse(PointerPlan.carriesTwo(0))
     }
+
+    @Test
+    fun an_ordinary_drag_keeps_up_with_the_finger() {
+        // Reported from the phone twice as "the mouse is very slow". A drag has
+        // to move the pointer at least as far as the thumb travelled; a share
+        // below one is exactly the lag the reader kept hitting, and ordinary
+        // drags sit at the bottom of the curve where that share was taken.
+        var previous = -1f
+        for (speed in listOf(0f, 0.05f, 0.1f, 0.3f, 0.6f, 1f, 3f, 9f)) {
+            val gain = PointerSpeed.gain(speed)
+            assertTrue("gain of $gain at $speed", gain >= 1f)
+            assertTrue("gain fell at $speed", gain >= previous - 0.0001f)
+            previous = gain
+        }
+    }
 }

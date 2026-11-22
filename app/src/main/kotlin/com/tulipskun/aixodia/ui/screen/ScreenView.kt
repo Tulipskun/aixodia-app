@@ -303,9 +303,33 @@ class ScreenView(context: Context) : View(context) {
         return viewport.isActualSize(width, height, picture.width, picture.height)
     }
 
+    /**
+     * Puts the arrow back in the middle of the pane after the zoom changes.
+     *
+     * A pinch keeps the point under the fingers where it was, which is right for
+     * the gesture but leaves the arrow wherever the pinch happened — reported
+     * from the phone as "after zooming the mouse is not in the middle". The
+     * arrow belongs where every other movement puts it: the middle of the pane,
+     * with the picture slid underneath.
+     */
+    private fun recentre() {
+        val picture = surface?.bitmap() ?: return
+        if (picture.width <= 0 || picture.height <= 0 || width == 0 || height == 0) return
+        val (x, y) = arrow() ?: (picture.width / 2 to picture.height / 2)
+        viewport.followPointer(
+            x.toFloat(),
+            y.toFloat(),
+            width,
+            height,
+            picture.width,
+            picture.height,
+        )
+    }
+
     /** Scale the picture to fit the view: the whole desktop, small. */
     fun fitScreen() {
         viewport.fit()
+        recentre()
         postInvalidateOnAnimation()
     }
 
@@ -318,6 +342,7 @@ class ScreenView(context: Context) : View(context) {
     fun actualSize() {
         val picture = surface?.bitmap() ?: return
         viewport.actualSize(width, height, picture.width, picture.height)
+        recentre()
         postInvalidateOnAnimation()
     }
 
@@ -949,6 +974,7 @@ class ScreenView(context: Context) : View(context) {
     private fun applyZoom(wanted: Float, slideX: Float, slideY: Float) {
         val picture = surface?.bitmap() ?: return
         viewport.pinch(wanted, slideX, slideY, width, height, picture.width, picture.height)
+        recentre()
         // On the next frame, not now: touch events arrive faster than the screen
         // refreshes, and drawing per event is the other half of the stutter.
         postInvalidateOnAnimation()

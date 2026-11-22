@@ -56,11 +56,19 @@ enum class InputMode(val stored: String, val label: String) {
  * above the 0.3 share this viewer used to apply flat.
  */
 object PointerSpeed {
-    /** Share of the finger's travel taken at a crawl, for aiming. */
-    const val SLOW = 0.40f
+    /**
+     * Share of the finger's travel taken at a crawl.
+     *
+     * One, not less: what the thumb drags has to keep up with the thumb, or it
+     * feels like pushing something heavy. Anything under one was reported from
+     * the phone twice as "the mouse is very slow", and no amount of acceleration
+     * hid it, because an ordinary drag sits near the bottom of the curve and
+     * took the slow share every time.
+     */
+    const val SLOW = 1f
 
     /** Share taken at a flick, for crossing the screen. */
-    const val FAST = 0.85f
+    const val FAST = 1.8f
 
     /**
      * The speed, in view pixels per millisecond, at which [FAST] is reached.
@@ -69,7 +77,7 @@ object PointerSpeed {
      * per millisecond: the top of the curve has to be inside that band, or a
      * normal flick is treated as a careful movement and crawls.
      */
-    const val FAST_AT = 0.5f
+    const val FAST_AT = 0.6f
 
     /** The stretch of a drag whose speed decides the gain, in milliseconds. */
     const val WINDOW_MS = 50L
