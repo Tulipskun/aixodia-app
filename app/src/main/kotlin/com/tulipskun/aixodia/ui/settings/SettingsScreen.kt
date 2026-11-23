@@ -935,14 +935,11 @@ private fun UpdateRow(settings: SettingsStore) {
                 busy = true; msg = "Checking…"
                 scope.launch {
                     try {
-                        val up = UpdateManager.check()
-                        if (up == null) {
-                            msg = "Up to date (v" + BuildConfig.VERSION_NAME + ")"
-                            return@launch
-                        }
-                        msg = "Found ${up.label}, downloading…"
-                        val apk = UpdateManager.download(ctx, up) { p -> msg = "Loading $p% (${up.label})" }
-                        msg = "Ready to install ${up.label}"
+                        val (words, update) = UpdateManager.announce(UpdateManager.check())
+                        msg = words
+                        if (update == null) return@launch
+                        val apk = UpdateManager.download(ctx, update) { p -> msg = "Loading $p% (${update.label})" }
+                        msg = "Ready to install ${update.label}"
                         UpdateManager.install(ctx, apk)
                     } catch (e: Exception) {
                         msg = "Update failed: ${e.message}"

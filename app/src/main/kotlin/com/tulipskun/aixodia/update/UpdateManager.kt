@@ -38,6 +38,26 @@ object UpdateManager {
     }
 
     /**
+     * What a check found.
+     *
+     * Three answers, not two. A check that could not be made — GitHub
+     * rate-limiting this address, no network, a release whose asset is still
+     * uploading — must not be reported as "up to date", because that is a
+     * statement about the published build and this one is only a statement
+     * about the asking.
+     */
+    sealed interface Check {
+        /** A newer build is published. */
+        data class Needed(val update: Update) : Check
+
+        /** The published build is not newer than this one. */
+        data object Fresh : Check
+
+        /** The question could not be asked, or the answer could not be read. */
+        data class Failed(val reason: String) : Check
+    }
+
+    /**
      * Returns an Update when the published build is newer than this one.
      *
      * The release tag is the rolling `latest`, so it carries no version. The
@@ -45,12 +65,14 @@ object UpdateManager {
      * is the same value burned into the APK, which makes the comparison exact.
      * A latest release without that asset is incomplete, not an update.
      */
-    suspend fun check(): Update? = withContext(Dispatchers.IO) {
-        val o = getJson("https://api.github.com/repos/$REPO/releases/latest")
-            ?: return@withContext null
-        val tag = o.optString("tag_name").trim()
-        if (tag.isEmpty()) return@withContext null
-        val assets = o.optJSONArray("assets") ?: return@withContext null
+    suspend fun check(): Check = withContext(Dispatchers.IO) {
+        val release = runCatching {
+            getJson("https://api.github.com/repos/$REPO/releases/latest")
+        }.getOrElse { return@withContext Check.Failed(it.message ?: "no answer from GitHub") }
+        val tag = release.optString("tag_name").trim()
+        if (tag.isEmpty()) return@withContext Check.Failed("the release has no tag")
+        val assets = release.optJSONArray("assets")
+            ?: return@withContext Check.Failed("the release has no assets")
 
         var apkUrl = ""
         var apkSize = 0L
@@ -66,30 +88,56 @@ object UpdateManager {
                 }
             }
         }
-        if (apkUrl.isEmpty() || metadataUrl.isEmpty()) return@withContext null
+        if (apkUrl.isEmpty() || metadataUrl.isEmpty()) {
+            return@withContext Check.Failed("the release is missing its APK or version file")
+        }
 
-        val meta = getJson(metadataUrl) ?: return@withContext null
+        val meta = runCatching { getJson(metadataUrl) }.getOrElse {
+            return@withContext Check.Failed(it.message ?: "the version file could not be read")
+        }
         val remoteCode = meta.optLong("versionCode", -1L)
         if (!rollingNeedsUpdate(remoteCode, BuildConfig.VERSION_CODE)) {
-            return@withContext null
+            return@withContext Check.Fresh
         }
-        Update(
-            tag = tag,
-            apkUrl = apkUrl,
-            size = apkSize,
-            versionName = meta.optString("versionName").trim(),
+        Check.Needed(
+            Update(
+                tag = tag,
+                apkUrl = apkUrl,
+                size = apkSize,
+                versionName = meta.optString("versionName").trim(),
+            ),
         )
     }
 
-    private fun getJson(url: String): JSONObject? {
+    /**
+     * One JSON document, or an error that says why there is not one.
+     *
+     * It throws rather than answering null, because a caller that cannot tell
+     * "nothing" from "nothing said" reports the wrong thing to the person
+     * waiting — which is how a rate-limited check came out as "up to date".
+     */
+    private fun getJson(url: String): JSONObject {
         val req = Request.Builder()
             .url(url)
             .header("Accept", "application/vnd.github+json")
             .get().build()
         client.newCall(req).execute().use { r ->
-            if (!r.isSuccessful) return null
-            return JSONObject(r.body!!.string())
+            if (!r.isSuccessful) throw IllegalStateException("GitHub said HTTP ${r.code}")
+            val body = r.body?.string() ?: throw IllegalStateException("GitHub said nothing")
+            return JSONObject(body)
         }
+    }
+
+    /**
+     * What the update row says next, and the build to install if there is one.
+     *
+     * One place for the wording, so the two screens that offer an update cannot
+     * drift — and so a check that failed is never dressed up as "up to date".
+     */
+    internal fun announce(check: Check): Pair<String, Update?> = when (check) {
+        is Check.Needed -> "Found ${check.update.label}, downloading…" to check.update
+        Check.Fresh -> "Up to date (v${BuildConfig.VERSION_NAME})" to null
+        is Check.Failed -> "Could not check: ${check.reason}" to null
     }
 
     /** Downloads the APK to private storage and returns the file. */
