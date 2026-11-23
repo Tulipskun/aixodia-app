@@ -119,6 +119,10 @@ fun KeyboardBar(socket: ScreenSocket) {
                     field()
                 },
             )
+            // The phone's own Enter is not something to rely on: a keyboard
+            // that sends the wrong action, or none, leaves typed text in the
+            // box with no way out. This key is always there.
+            Key("↵", on = false) { typed(compose) }
         }
 
         Row(
