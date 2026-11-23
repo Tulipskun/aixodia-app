@@ -69,6 +69,13 @@ fun ScreenPanel(
     var mode by remember { mutableStateOf(InputMode.TRACKPAD) }
     var codec by remember { mutableStateOf("jpeg") }
     var keyboardShown by remember { mutableStateOf(false) }
+    // How many times the keyboard has been asked for. The bar is composed once
+    // and stays composed while it is shown, so "show it again" cannot be an
+    // assignment: a reader who put the keyboard away with Back leaves the bar up
+    // and `keyboardShown` already true, and every later click that wanted text
+    // set the value it already had and brought nothing back. An ask that counts
+    // is a new ask every time.
+    var keyboardAsk by remember { mutableIntStateOf(0) }
     // A tap asks the machine what it landed in, which takes a moment; a second
     // tap before the answer arrives must not be overruled by the first one.
     var keyboardJob by remember { mutableStateOf<Job?>(null) }
@@ -293,7 +300,9 @@ fun ScreenPanel(
                                 // machine has to move its pointer before its
                                 // cursor means anything about what was clicked.
                                 delay(KEYBOARD_SETTLE_MS)
-                                keyboardShown = socket.cursorRole == ScreenSocket.ROLE_TEXT
+                                val wantsTyping = socket.cursorRole == ScreenSocket.ROLE_TEXT
+                                keyboardShown = wantsTyping
+                                if (wantsTyping) keyboardAsk++
                             }
                         }
                         view = it
@@ -331,7 +340,10 @@ fun ScreenPanel(
                 onOpen = { railOpen = it },
                 onMouse = { mouseOpen = it },
                 onSettings = { settingsOpen = it },
-                onKeyboard = { keyboardShown = !keyboardShown },
+                onKeyboard = {
+                    keyboardShown = !keyboardShown
+                    if (keyboardShown) keyboardAsk++
+                },
                 onLeave = onLeave,
                 onScroll = { notches ->
                     val (x, y) = surface.cursor
@@ -361,7 +373,7 @@ fun ScreenPanel(
             )
         }
         if (keyboardShown) {
-            KeyboardBar(socket)
+            KeyboardBar(socket, ask = keyboardAsk)
         }
     }
 }

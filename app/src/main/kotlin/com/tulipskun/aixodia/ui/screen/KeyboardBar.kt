@@ -46,18 +46,29 @@ import com.tulipskun.aixodia.data.remote.ScreenSocket
  *
  * Text is sent as text, not as keystrokes, so what is typed here reaches the
  * machine exactly as written: Thai included.
+ *
+ * [ask] is how many times the keyboard has been wanted. The bar is composed once
+ * and stays composed while it is shown, so it re-takes the keyboard on every new
+ * ask rather than only on its first composition — a reader who put the keyboard
+ * away with Back still has the bar on screen, and a later tap in a text field has
+ * to bring the keyboard back.
  */
 @Composable
-fun KeyboardBar(socket: ScreenSocket) {
+fun KeyboardBar(socket: ScreenSocket, ask: Int = 0) {
     var compose by remember { mutableStateOf("") }
     var ctrl by remember { mutableStateOf(false) }
     var alt by remember { mutableStateOf(false) }
     // The bar appears because typing is wanted — the keyboard icon, or a tap that
     // landed in something text can be typed into — so it takes the phone's
-    // keyboard at once rather than asking for a second tap on its own field.
+    // keyboard at once, and again on every later ask.
     val field = remember { FocusRequester() }
     val keyboard = LocalSoftwareKeyboardController.current
-    LaunchedEffect(Unit) { field.requestFocus() }
+    LaunchedEffect(ask) {
+        field.requestFocus()
+        // Focus alone is a suggestion: the keyboard belongs to the window, and
+        // asking for it directly is what makes it come back after Back.
+        keyboard?.show()
+    }
     DisposableEffect(Unit) {
         onDispose { keyboard?.hide() }
     }
