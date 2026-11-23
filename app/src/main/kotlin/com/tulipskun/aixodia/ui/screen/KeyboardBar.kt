@@ -14,12 +14,17 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.input.key.KeyEventType
@@ -47,6 +52,15 @@ fun KeyboardBar(socket: ScreenSocket) {
     var compose by remember { mutableStateOf("") }
     var ctrl by remember { mutableStateOf(false) }
     var alt by remember { mutableStateOf(false) }
+    // The bar appears because typing is wanted — the keyboard icon, or a tap that
+    // landed in something text can be typed into — so it takes the phone's
+    // keyboard at once rather than asking for a second tap on its own field.
+    val field = remember { FocusRequester() }
+    val keyboard = LocalSoftwareKeyboardController.current
+    LaunchedEffect(Unit) { field.requestFocus() }
+    DisposableEffect(Unit) {
+        onDispose { keyboard?.hide() }
+    }
 
     fun modifiers(): List<String> = buildList {
         if (ctrl) add("ctrl")
@@ -93,6 +107,7 @@ fun KeyboardBar(socket: ScreenSocket) {
                 keyboardActions = KeyboardActions(onSend = { typed(compose) }),
                 modifier = Modifier
                     .weight(1f)
+                    .focusRequester(field)
                     .background(MaterialTheme.colorScheme.surfaceVariant)
                     .padding(horizontal = 8.dp, vertical = 8.dp)
                     .onPreviewKeyEvent { event ->

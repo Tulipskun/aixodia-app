@@ -221,6 +221,16 @@ class ScreenView(context: Context) : View(context) {
     var videoMode: Boolean = false
 
     /**
+     * Told when a tap lands on the picture as a click.
+     *
+     * A tap is the only moment the viewer learns what the machine put under it:
+     * whether text can be typed there, so the keyboard belongs on screen. Told
+     * after the click is sent, because it is the click that moves the machine's
+     * pointer into the thing that was tapped.
+     */
+    var onClick: (() -> Unit)? = null
+
+    /**
      * Whether a finger pushes the pointer or is the pointer.
      *
      * The pad is the default because it is the mode that works on a desktop too
@@ -729,6 +739,9 @@ class ScreenView(context: Context) : View(context) {
         removeCallbacks(settleRun)
         val at = pointerFor(event) ?: surface?.cursor ?: return
         socket.up(at.first, at.second, "left")
+        // A touch that never moved is a click, and a click is what decides
+        // whether the keyboard belongs on screen.
+        if (!movedEnough) onClick?.invoke()
     }
 
     /** Lets go of a press that a pinch or a mode change interrupted. */
@@ -910,6 +923,7 @@ class ScreenView(context: Context) : View(context) {
         val button = PointerPlan.tapButton(maxFingers)
         socket.down(at.first, at.second, button)
         socket.up(at.first, at.second, button)
+        onClick?.invoke()
     }
 
     /**

@@ -153,6 +153,15 @@ class ScreenSocket(
             val hotX: Int,
             val hotY: Int,
             val rgba: ByteArray,
+            /**
+             * What the pointer is over: `text` when text can be typed there,
+             * `pointer` for anything else.
+             *
+             * X answers this with the cursor the widget set, and the engine
+             * reads it off the shape, so a tap knows whether the phone's
+             * keyboard belongs on screen.
+             */
+            val role: String,
         ) : Event {
             // A data class with a ByteArray gets identity equality, which is
             // right here: two cursors with the same bytes are still two events.
@@ -173,6 +182,17 @@ class ScreenSocket(
 
     /** What the engine said when the link opened, kept for what later frames omit. */
     private var hello: Hello? = null
+
+    /**
+     * What the pointer is over at its last report, as the engine read it.
+     *
+     * Read when a tap lands: a tap into something text can be typed into brings
+     * the phone's keyboard up, and a tap anywhere else puts it away. Volatile
+     * because the reader thread writes it and the touch thread reads it.
+     */
+    @Volatile
+    var cursorRole: String = ROLE_POINTER
+        private set
 
     private val events = Channel<Event>(Channel.BUFFERED)
     val stream: Flow<Event> = events.receiveAsFlow()
@@ -569,6 +589,9 @@ class ScreenSocket(
                     if (width in 1..MAX_CURSOR && height in 1..MAX_CURSOR &&
                         rgba != null && rgba.size == width * height * 4
                     ) {
+                        // Stored before it is announced: a tap that arrives
+                        // between the two must see the new role, not the old.
+                        cursorRole = parsed.optString("role", ROLE_POINTER)
                         events.trySend(
                             Event.Cursor(
                                 width = width,
@@ -576,6 +599,7 @@ class ScreenSocket(
                                 hotX = parsed.optInt("hot_x").coerceIn(0, width - 1),
                                 hotY = parsed.optInt("hot_y").coerceIn(0, height - 1),
                                 rgba = rgba,
+                                role = parsed.optString("role", ROLE_POINTER),
                             ),
                         )
                     }
@@ -742,6 +766,12 @@ class ScreenSocket(
          * made to fall over by a broken frame.
          */
         private const val MAX_CURSOR = 128
+
+        /** The role of every shape that is not a text cursor. */
+        const val ROLE_POINTER = "pointer"
+
+        /** The role of the I-beam a widget shows when text can be typed. */
+        const val ROLE_TEXT = "text"
 
         /** How long the engine has to answer a dial with hello. */
         private const val READY_TIMEOUT_MS = 10_000L

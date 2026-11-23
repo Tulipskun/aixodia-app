@@ -25,6 +25,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -37,6 +38,9 @@ import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.tulipskun.aixodia.data.remote.ScreenSocket
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 
 /**
  * The engine's screen, on the phone, under a finger.
@@ -65,6 +69,10 @@ fun ScreenPanel(
     var mode by remember { mutableStateOf(InputMode.TRACKPAD) }
     var codec by remember { mutableStateOf("jpeg") }
     var keyboardShown by remember { mutableStateOf(false) }
+    // A tap asks the machine what it landed in, which takes a moment; a second
+    // tap before the answer arrives must not be overruled by the first one.
+    var keyboardJob by remember { mutableStateOf<Job?>(null) }
+    val scope = rememberCoroutineScope()
     // The viewer's rail: closed until the three dots are pressed, and each pane
     // it opens is remembered separately, the way a viewer does — the mouse pane
     // can stay up while the settings pane is opened and closed again.
@@ -275,6 +283,19 @@ fun ScreenPanel(
                         // than into a bitmap, and the picture itself is not drawn
                         // here at all.
                         it.videoMode = videoMode
+                        // A tap decides whether the keyboard belongs on screen:
+                        // on the picture it is the machine that says so, by
+                        // putting an I-beam under the pointer.
+                        it.onClick = {
+                            keyboardJob?.cancel()
+                            keyboardJob = scope.launch {
+                                // The click has to reach the machine and the
+                                // machine has to move its pointer before its
+                                // cursor means anything about what was clicked.
+                                delay(KEYBOARD_SETTLE_MS)
+                                keyboardShown = socket.cursorRole == ScreenSocket.ROLE_TEXT
+                            }
+                        }
                         view = it
                     }
                 },
@@ -355,3 +376,14 @@ private fun Centered(text: String) {
         )
     }
 }
+
+/**
+ * How long a click gets to move the machine's pointer.
+ *
+ * A tap is sent to the machine, and what the machine puts under its pointer is
+ * what says whether the keyboard belongs on screen. Asking straight away would
+ * answer about the place it was clicked from rather than the place it was
+ * clicked on: a quarter of a second is longer than the round trip and shorter
+ * than a person's next tap.
+ */
+private const val KEYBOARD_SETTLE_MS = 250L
