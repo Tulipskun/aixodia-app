@@ -887,10 +887,20 @@ class ScreenView(context: Context) : View(context) {
         sendMove(socket, wantX, wantY)
     }
 
-    /** A tap clicks at the pointer, never at the finger. */
+    /**
+     * A tap clicks where the finger is, and the arrow goes there first.
+     *
+     * A press on a text field has to put the pointer in that field, or the field
+     * is not what gets typed into — pressing Chromium's address bar used to click
+     * wherever the arrow happened to be, which was measured leaving the keyboard
+     * down and the machine's focus on a terminal. A drag still moves the arrow
+     * from where it was; only the press that never moved lands by itself.
+     */
     private fun endOneFinger(event: MotionEvent) {
         val socket = socket ?: return
-        val at = arrow()
+        // The finger's place, converted the same way a touch-mode press converts
+        // it: the picture, the zoom and the pan are one transform for both modes.
+        val at = pointerFor(event) ?: arrow()
         val now = System.currentTimeMillis()
 
         if (held) {
@@ -906,6 +916,12 @@ class ScreenView(context: Context) : View(context) {
         }
         if (dragged || movedEnough) return
         if (at == null) return
+
+        // The arrow follows the press: it is about to click here, and an arrow
+        // left somewhere else would say the wrong thing about where the pointer is.
+        pointerX = at.first
+        pointerY = at.second
+        markCursor(at.first, at.second)
 
         val isDouble = secondTap && now - lastTapAt <= DOUBLE_TAP_MS
         if (isDouble) {
