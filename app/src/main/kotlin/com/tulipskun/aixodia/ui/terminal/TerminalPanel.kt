@@ -103,6 +103,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
@@ -698,12 +700,14 @@ fun TerminalWindow(
                                         socket = socket,
                                         directInput = directInput.value,
                                         onToggleDirect = {
-                                            val to = !directInput.value
-                                            directInput.value = to
-                                            // Entering direct mode raises the grid's
-                                            // keyboard at once, so the switch is felt
-                                            // the moment it is made.
-                                            if (to) view.showSoftKeyboard()
+                                            // The switch changes which surface owns
+                                            // the keyboard; it is not a request to
+                                            // put the keyboard away. Raising the
+                                            // grid's IME is left to the effect below,
+                                            // because a request made here is answered
+                                            // by a field that is about to be removed
+                                            // from the layout.
+                                            directInput.value = !directInput.value
                                         },
                                         mods = KeyMods(ctrlOn.value, altOn.value, shiftOn.value),
                                         onModsConsumed = {
@@ -721,6 +725,22 @@ fun TerminalWindow(
                                             }
                                         },
                                     )
+                                    // Whichever surface the switch hands the keyboard
+                                    // to keeps it: going direct raises the grid's, and
+                                    // the composer raises its own when it comes back.
+                                    // This runs after the recomposition that swapped
+                                    // them — asking earlier is answered by the field
+                                    // that the swap is about to remove. The first
+                                    // layout is skipped: a terminal does not open with
+                                    // a keyboard over it.
+                                    var switched by remember { mutableStateOf(false) }
+                                    LaunchedEffect(directInput.value) {
+                                        if (!switched) {
+                                            switched = true
+                                            return@LaunchedEffect
+                                        }
+                                        if (directInput.value) view.showSoftKeyboard()
+                                    }
                                 }
                             }
                         }
@@ -1393,6 +1413,14 @@ private fun TerminalComposer(
 ) {
     var field by remember { mutableStateOf(TextFieldValue("")) }
     val currentMods by rememberUpdatedState(mods)
+    // The field's own IME target. The switch back from the grid asks for this
+    // focus, which is what raises the keyboard: the surface is the one that owns
+    // the keyboard either way, so the switch must not be the thing that puts it
+    // away.
+    val fieldFocus = remember { FocusRequester() }
+    // Whether this box has been on screen before. The first time the terminal
+    // opens the keyboard stays down; only a switch back into the box raises it.
+    var boxWasHere by remember { mutableStateOf(false) }
     val delScope = rememberCoroutineScope()
     var holdJob by remember { mutableStateOf<Job?>(null) }
 
@@ -1449,6 +1477,9 @@ private fun TerminalComposer(
                     .padding(horizontal = 6.dp),
             )
         } else {
+        LaunchedEffect(Unit) {
+            if (boxWasHere) fieldFocus.requestFocus() else boxWasHere = true
+        }
         OutlinedTextField(
             value = field,
             onValueChange = { next ->
@@ -1490,6 +1521,7 @@ private fun TerminalComposer(
             },
             modifier = Modifier
                 .weight(1f)
+                .focusRequester(fieldFocus)
                 .onPreviewKeyEvent { event ->
                     // A field with content keeps ordinary editing; only an
                     // empty one gives its Backspace to the shell.
