@@ -1,7 +1,9 @@
 package com.tulipskun.aixodia
 
 import android.content.Context
+import androidx.datastore.core.handlers.ReplaceFileCorruptionHandler
 import androidx.datastore.preferences.core.edit
+import androidx.datastore.preferences.core.emptyPreferences
 import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
@@ -9,7 +11,23 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 
-private val Context.ds by preferencesDataStore("aixodia")
+/**
+ * The app's settings, on disk.
+ *
+ * A settings file can be left half written — a process killed in the middle of a
+ * save, a phone that died with the write in its buffer — and DataStore cannot
+ * read it: it threw "Protocol message contained an invalid tag (zero)" during
+ * startup and the app died before drawing anything. Measured on a phone that had
+ * been force-stopped during a save, twice, with the app unable to open at all.
+ *
+ * A file that cannot be read is replaced by an empty one, so a corrupt save costs
+ * the settings and not the app. Nothing here is worth a phone that cannot open
+ * the program that would let someone set it right.
+ */
+private val Context.ds by preferencesDataStore(
+    name = "aixodia",
+    corruptionHandler = ReplaceFileCorruptionHandler { emptyPreferences() },
+)
 
 const val DEFAULT_DAEMON_URL = "https://engine.aixodia.dpdns.org"
 
