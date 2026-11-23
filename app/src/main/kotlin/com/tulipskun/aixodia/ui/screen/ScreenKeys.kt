@@ -24,6 +24,8 @@ object ScreenKeys {
         Key.DirectionDown -> Down
         Key.MoveHome -> Home
         Key.MoveEnd -> End
+        // An empty box has no line to break, so its Enter is the machine's.
+        Key.Enter, Key.NumPadEnter -> Return
         else -> null
     }
 
@@ -35,4 +37,5 @@ object ScreenKeys {
     const val Down = "Down"
     const val Home = "Home"
     const val End = "End"
+    const val Return = "Return"
 }

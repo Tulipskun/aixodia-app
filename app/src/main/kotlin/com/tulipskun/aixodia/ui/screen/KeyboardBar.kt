@@ -86,7 +86,6 @@ fun KeyboardBar(socket: ScreenSocket, ask: Int = 0) {
     }
 
     fun typed(value: String) {
-        if (value.isEmpty()) return
         // With a modifier held, the field is a way to press a chord. Without
         // one, it is ordinary text in whatever language it was written in.
         if (ctrl || alt) {
@@ -97,6 +96,19 @@ fun KeyboardBar(socket: ScreenSocket, ask: Int = 0) {
             socket.text(value)
         }
         compose = ""
+    }
+
+    /**
+     * The Enter key, whether or not anything was typed first.
+     *
+     * An empty box used to swallow it: `typed("")` has nothing to send, so a
+     * reader who wanted to press Enter on the machine — to accept a dialog, run a
+     * command, confirm a search — had no way to do it, because the only Enter on
+     * the bar was the one that sent the text and there was no text. An empty box
+     * means the machine's Enter, and that is a key rather than a paste.
+     */
+    fun enter() {
+        if (compose.isEmpty() && !ctrl && !alt) send(ScreenKeys.Return) else typed(compose)
     }
 
     androidx.compose.foundation.layout.Column(
@@ -115,7 +127,7 @@ fun KeyboardBar(socket: ScreenSocket, ask: Int = 0) {
                 ),
                 cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
                 keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
-                keyboardActions = KeyboardActions(onSend = { typed(compose) }),
+                keyboardActions = KeyboardActions(onSend = { enter() }),
                 modifier = Modifier
                     .weight(1f)
                     .focusRequester(field)
@@ -147,8 +159,9 @@ fun KeyboardBar(socket: ScreenSocket, ask: Int = 0) {
             )
             // The phone's own Enter is not something to rely on: a keyboard
             // that sends the wrong action, or none, leaves typed text in the
-            // box with no way out. This key is always there.
-            Key("↵", on = false) { typed(compose) }
+            // box with no way out, and with nothing typed an Enter still has a
+            // job on the machine. This key is always there.
+            Key("↵", on = false) { enter() }
         }
 
         Row(

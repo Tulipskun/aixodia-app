@@ -355,8 +355,7 @@ class ScreenView(context: Context) : View(context) {
     }
 
     /** Scale the picture to fit the view: the whole desktop, small. */
-    fun fitScreen() {
-        viewport.fit()
+    fun fitScreen() {        viewport.fit()
         pullArrowToCentre()
         postInvalidateOnAnimation()
     }
@@ -377,6 +376,103 @@ class ScreenView(context: Context) : View(context) {
     /** Puts a fresh frame on screen. Called from the socket's collector. */
     fun invalidateFrame() {
         postInvalidateOnAnimation()
+    }
+
+    /**
+     * Whether the phone's keyboard is up, so the arrow belongs above it.
+     *
+     * Two places want the arrow: the middle of the pane when the picture is
+     * being looked at, and just above the keyboard when something is being typed
+     * into it — the field the reader pressed has to stay in sight while they
+     * type. Setting this moves the picture there, eased, rather than jumping.
+     */
+    var typing: Boolean = false
+        set(value) {
+            if (field == value) return
+            field = value
+            settlePointer()
+        }
+
+    /**
+     * Slides the picture so the arrow is where this view wants it — the middle,
+     * or, while typing, just above the keyboard.
+     *
+     * A picture with no slack (fitted, or at an edge) cannot move, and then this
+     * does nothing: the arrow is as central as the desktop allows, which is the
+     * rule the viewer this copies follows.
+     */
+    fun settlePointer() {
+        val picture = surface?.bitmap() ?: return
+        if (picture.width <= 0 || picture.height <= 0 || width == 0 || height == 0) return
+        val at = arrow() ?: return
+        val centreX = width / 2f
+        val centreY = if (typing) height - TYPING_MARGIN_DP * resources.displayMetrics.density else height / 2f
+        val (toX, toY) = viewport.panFor(
+            at.first.toFloat(),
+            at.second.toFloat(),
+            centreX,
+            centreY,
+            width,
+            height,
+            picture.width,
+            picture.height,
+        ) ?: return
+        glideTo(toX, toY)
+    }
+
+    // The move in flight: where it began, where it is going, and when it began.
+    private var glideFromX = 0f
+    private var glideFromY = 0f
+    private var glideToX = 0f
+    private var glideToY = 0f
+    private var glideStart = 0L
+    private var gliding = false
+    private val glideStep = object : Runnable {
+        override fun run() {
+            val picture = surface?.bitmap() ?: return
+            val elapsed = (System.currentTimeMillis() - glideStart).toFloat()
+            val t = if (Glide.MS <= 0L) 1f else elapsed / Glide.MS
+            viewport.slideTo(
+                Glide.at(glideFromX, glideToX, t),
+                Glide.at(glideFromY, glideToY, t),
+                width,
+                height,
+                picture.width,
+                picture.height,
+            )
+            postInvalidateOnAnimation()
+            if (t < 1f) {
+                postOnAnimation(this)
+            } else {
+                gliding = false
+            }
+        }
+    }
+
+    /** Starts, or redirects, an eased slide of the picture to a pan. */
+    private fun glideTo(panX: Float, panY: Float) {
+        glideFromX = viewport.panX
+        glideFromY = viewport.panY
+        glideToX = panX
+        glideToY = panY
+        glideStart = System.currentTimeMillis()
+        if (!gliding) {
+            gliding = true
+            post(glideStep)
+        }
+    }
+
+    /**
+     * The pane changed size: the keyboard came or went, or the phone turned.
+     *
+     * The picture is redrawn for the new shape, so the arrow lands somewhere
+     * else on the glass without the machine's pointer having moved at all. A
+     * viewer keeps it where the reader expects it — the middle, or above the
+     * keyboard — and slides there rather than snapping.
+     */
+    override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) {
+        super.onSizeChanged(w, h, oldw, oldh)
+        if (oldw > 0 && oldh > 0) settlePointer()
     }
 
     /**
@@ -557,6 +653,10 @@ class ScreenView(context: Context) : View(context) {
 
         when (event.actionMasked) {
             MotionEvent.ACTION_DOWN -> {
+                // A finger landing takes the picture back from any slide still in
+                // flight: two things moving it at once is the flick the reader sees.
+                gliding = false
+                removeCallbacks(glideStep)
                 downAt = System.currentTimeMillis()
                 downX = event.x
                 downY = event.y
@@ -1101,6 +1201,9 @@ class ScreenView(context: Context) : View(context) {
 
         /** How soon a second tap counts as a double tap. */
         private const val DOUBLE_TAP_MS = 300L
+
+        /** How far above the keyboard the arrow is kept while typing. */
+        private const val TYPING_MARGIN_DP = 56f
 
         /** The arrow's size at 1:1, and the largest it is allowed to grow. */
 

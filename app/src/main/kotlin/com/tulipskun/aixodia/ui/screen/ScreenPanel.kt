@@ -120,6 +120,13 @@ fun ScreenPanel(
         view?.inputMode = mode
     }
 
+    // While the keyboard is up, the field being typed into belongs in sight: the
+    // view slides the picture so the arrow sits just above the keyboard, and
+    // back to the middle when the keyboard goes away.
+    LaunchedEffect(keyboardShown) {
+        view?.typing = keyboardShown
+    }
+
     DisposableEffect(Unit) {
         onDispose { video.stop() }
     }

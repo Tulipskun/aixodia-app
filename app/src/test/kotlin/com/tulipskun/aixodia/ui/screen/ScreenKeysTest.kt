@@ -34,4 +34,12 @@ class ScreenKeysTest {
         assertNull(ScreenKeys.forEditKey(Key.A))
         assertNull(ScreenKeys.forEditKey(Key.Spacebar))
     }
+
+    @Test
+    fun an_enter_on_an_empty_box_is_the_machines_enter() {
+        // A dialog, a command, a search: the machine's Enter is a key that has to
+        // exist even when there is nothing typed in front of it.
+        assertEquals("Return", ScreenKeys.forEditKey(Key.Enter))
+        assertEquals("Return", ScreenKeys.forEditKey(Key.NumPadEnter))
+    }
 }

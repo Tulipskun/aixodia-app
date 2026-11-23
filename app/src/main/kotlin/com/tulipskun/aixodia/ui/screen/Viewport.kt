@@ -160,10 +160,62 @@ class Viewport {
         pictureWidth: Int,
         pictureHeight: Int,
     ) {
-        val fit = fitOf(viewWidth, viewHeight, pictureWidth, pictureHeight) ?: return
+        panFor(
+            pointerX,
+            pointerY,
+            viewWidth / 2f,
+            viewHeight / 2f,
+            viewWidth,
+            viewHeight,
+            pictureWidth,
+            pictureHeight,
+        )?.let { (x, y) ->
+            panX = x
+            panY = y
+        }
+        clamp(viewWidth, viewHeight, pictureWidth, pictureHeight)
+    }
+
+    /**
+     * The pan that would draw picture pixel ([pointerX], [pointerY]) at ([atX],
+     * [atY]) of the view, before the edges have their say.
+     *
+     * The arrow is centred by asking for the middle of the view, and made to sit
+     * just above the phone's keyboard by asking for a point near the bottom — one
+     * piece of arithmetic for both, because two of them drifting apart is how an
+     * arrow ends up somewhere the finger is not.
+     */
+    fun panFor(
+        pointerX: Float,
+        pointerY: Float,
+        atX: Float,
+        atY: Float,
+        viewWidth: Int,
+        viewHeight: Int,
+        pictureWidth: Int,
+        pictureHeight: Int,
+    ): Pair<Float, Float>? {
+        val fit = fitOf(viewWidth, viewHeight, pictureWidth, pictureHeight) ?: return null
         val scale = fit * zoom
-        panX = pictureWidth * scale / 2f - pointerX * scale
-        panY = pictureHeight * scale / 2f - pointerY * scale
+        val drawnWidth = pictureWidth * scale
+        val drawnHeight = pictureHeight * scale
+        // The picture is drawn centred plus the pan, so the pan that moves
+        // picture pixel x to view point atX is the difference between them.
+        return (atX - (viewWidth - drawnWidth) / 2f - pointerX * scale) to
+            (atY - (viewHeight - drawnHeight) / 2f - pointerY * scale)
+    }
+
+    /** Puts the picture at a pan worked out elsewhere, kept inside its slack. */
+    fun slideTo(
+        panX: Float,
+        panY: Float,
+        viewWidth: Int,
+        viewHeight: Int,
+        pictureWidth: Int,
+        pictureHeight: Int,
+    ) {
+        this.panX = panX
+        this.panY = panY
         clamp(viewWidth, viewHeight, pictureWidth, pictureHeight)
     }
 
