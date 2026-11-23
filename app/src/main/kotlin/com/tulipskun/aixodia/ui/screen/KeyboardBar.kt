@@ -22,6 +22,10 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.type
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
@@ -90,7 +94,20 @@ fun KeyboardBar(socket: ScreenSocket) {
                 modifier = Modifier
                     .weight(1f)
                     .background(MaterialTheme.colorScheme.surfaceVariant)
-                    .padding(horizontal = 8.dp, vertical = 8.dp),
+                    .padding(horizontal = 8.dp, vertical = 8.dp)
+                    .onPreviewKeyEvent { event ->
+                        // An empty field has nothing of its own to edit, so an
+                        // edit key belongs to the machine: a backspace that
+                        // only empty a box the user cannot see is a key that
+                        // does nothing. A field with text keeps its own
+                        // editing, which is what a text box is for.
+                        if (compose.isNotEmpty() || event.type != KeyEventType.KeyDown) {
+                            return@onPreviewKeyEvent false
+                        }
+                        val name = ScreenKeys.forEditKey(event.key) ?: return@onPreviewKeyEvent false
+                        send(name)
+                        true
+                    },
                 decorationBox = { field ->
                     if (compose.isEmpty()) {
                         Text(
@@ -112,16 +129,18 @@ fun KeyboardBar(socket: ScreenSocket) {
             horizontalArrangement = Arrangement.spacedBy(6.dp),
         ) {
             Modifier.width(1.dp)
+            Key("⌫", on = false) { send(ScreenKeys.BackSpace) }
+            Key("Del", on = false) { send(ScreenKeys.Delete) }
             Key("Esc", on = false) { send("Escape") }
             Key("Tab", on = false) { send("Tab") }
             Key("Ctrl", on = ctrl) { ctrl = !ctrl }
             Key("Alt", on = alt) { alt = !alt }
-            Key("←", on = false) { send("Left") }
-            Key("↑", on = false) { send("Up") }
-            Key("↓", on = false) { send("Down") }
-            Key("→", on = false) { send("Right") }
-            Key("Home", on = false) { send("Home") }
-            Key("End", on = false) { send("End") }
+            Key("←", on = false) { send(ScreenKeys.Left) }
+            Key("↑", on = false) { send(ScreenKeys.Up) }
+            Key("↓", on = false) { send(ScreenKeys.Down) }
+            Key("→", on = false) { send(ScreenKeys.Right) }
+            Key("Home", on = false) { send(ScreenKeys.Home) }
+            Key("End", on = false) { send(ScreenKeys.End) }
             Key("PgUp", on = false) { send("Prior") }
             Key("PgDn", on = false) { send("Next") }
             listOf("F1", "F2", "F3", "F4", "F5", "F6", "F7", "F8", "F9", "F10", "F11", "F12")
