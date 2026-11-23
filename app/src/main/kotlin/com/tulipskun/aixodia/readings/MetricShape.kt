@@ -79,4 +79,17 @@ internal object MetricShape {
 
     /** A capacity, said the way the card's total is said: whole gigabytes. */
     fun wholeGb(bytes: Long?): String? = toGb(bytes)?.let { format(it, 0) }
+
+    /**
+     * The cores a CPU share is drawn against, as the card says it: `4`, or `1.5`
+     * for a fractional quota, with no trailing `.0`.
+     *
+     * The engine reports the quota it lives under, so this is the size of the
+     * machine the card is describing rather than the size of the host it sits on.
+     */
+    fun cores(count: Double?): String? {
+        val value = count ?: return null
+        if (value <= 0.0) return null
+        return if (value == Math.floor(value)) format(value, 0) else format(value, 1)
+    }
 }

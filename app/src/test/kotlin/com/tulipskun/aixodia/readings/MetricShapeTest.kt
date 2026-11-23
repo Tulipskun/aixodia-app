@@ -101,4 +101,14 @@ class MetricShapeTest {
         val points = MetricShape.points(listOf(-5.0, 140.0), ceiling = 100.0)
         assertTrue(points.all { it.second in MetricShape.TOP..MetricShape.FLOOR })
     }
+
+    @Test
+    fun `cores are said without a decimal that is not there`() {
+        assertEquals("4", MetricShape.cores(4.0))
+        assertEquals("1.5", MetricShape.cores(1.5))
+        assertEquals("32", MetricShape.cores(32.0))
+        // Nothing said is nothing drawn, not "0 cores".
+        assertEquals(null, MetricShape.cores(null))
+        assertEquals(null, MetricShape.cores(0.0))
+    }
 }

@@ -20,6 +20,8 @@ data class EngineReadings(
     val cpu: List<Double> = emptyList(),
     val ram: List<Double> = emptyList(),
     val disk: List<Double> = emptyList(),
+    /** The cores this engine's CPU share is drawn against, as the card says it. */
+    val cpuCores: String? = null,
     val ramTotalGb: String? = null,
     val diskTotalGb: String? = null,
 ) {
@@ -33,6 +35,7 @@ data class EngineReadings(
             disk = disk.plus(MetricShape.toGb(health.diskUsedBytes)),
             // A capacity is a fact about the machine, not a sample: it stays where
             // it was when a reply leaves it out rather than flickering to nothing.
+            cpuCores = MetricShape.cores(health.cpuCores) ?: cpuCores,
             ramTotalGb = MetricShape.wholeGb(health.memoryTotalBytes) ?: ramTotalGb,
             diskTotalGb = MetricShape.wholeGb(health.diskTotalBytes) ?: diskTotalGb,
         )
@@ -52,6 +55,7 @@ data class EngineReadings(
                     put("cpu", readings.cpu.toJson())
                     put("ram", readings.ram.toJson())
                     put("disk", readings.disk.toJson())
+                    readings.cpuCores?.let { put("cpuCores", it) }
                     readings.ramTotalGb?.let { put("ramTotal", it) }
                     readings.diskTotalGb?.let { put("diskTotal", it) }
                 })
@@ -69,6 +73,7 @@ data class EngineReadings(
                     cpu = entry.samples("cpu"),
                     ram = entry.samples("ram"),
                     disk = entry.samples("disk"),
+                    cpuCores = entry.optString("cpuCores").takeIf { it.isNotBlank() },
                     ramTotalGb = entry.optString("ramTotal").takeIf { it.isNotBlank() },
                     diskTotalGb = entry.optString("diskTotal").takeIf { it.isNotBlank() },
                 )

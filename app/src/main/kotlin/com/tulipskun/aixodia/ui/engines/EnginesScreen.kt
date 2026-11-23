@@ -380,7 +380,10 @@ internal fun EngineCard(
                 icon = Icons.Filled.Memory,
                 series = readings?.cpu.orEmpty(),
                 digits = 0,
-                unit = "%",
+                // A share of what: the cores this engine may use, when the engine
+                // says so. `12%` alone reads the same on a phone-sized engine and
+                // on a thirty-two-core host, and those are different machines.
+                unit = readings?.cpuCores?.let { "% of $it" } ?: "%",
                 total = null,
                 ceiling = 100.0,
                 first = true,

@@ -14,6 +14,13 @@ import org.json.JSONObject
  */
 data class Health(
     val cpuPercent: Double? = null,
+    /**
+     * The cores the CPU share is a share of — the engine's cgroup quota, or the
+     * machine's own cores when nothing limits it. A percentage without its whole
+     * is a number nobody can act on: 12 % of four cores is idle, 12 % of one is
+     * not.
+     */
+    val cpuCores: Double? = null,
     val memoryPercent: Double? = null,
     val memoryUsedBytes: Long? = null,
     val memoryTotalBytes: Long? = null,
@@ -39,6 +46,7 @@ data class Health(
             if (!body.has("ok")) return null
             return Health(
                 cpuPercent = body.percent("cpu_percent"),
+                cpuCores = body.number("cpu_cores")?.takeIf { it > 0.0 },
                 memoryPercent = body.percent("memory_percent"),
                 memoryUsedBytes = body.bytes("memory_used_bytes"),
                 memoryTotalBytes = body.bytes("memory_total_bytes"),

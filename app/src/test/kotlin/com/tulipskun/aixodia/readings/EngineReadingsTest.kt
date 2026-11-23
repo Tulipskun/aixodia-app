@@ -19,6 +19,7 @@ class EngineReadingsTest {
 
     private fun health(cpu: Double, usedGb: Long, totalGb: Long = 8) = Health(
         cpuPercent = cpu,
+        cpuCores = 4.0,
         memoryUsedBytes = usedGb * gigabyte,
         memoryTotalBytes = totalGb * gigabyte,
         diskUsedBytes = 11L * gigabyte,
@@ -33,6 +34,18 @@ class EngineReadingsTest {
         assertEquals(listOf(11.0), readings.disk)
         assertEquals("8", readings.ramTotalGb)
         assertEquals("40", readings.diskTotalGb)
+        assertEquals("4", readings.cpuCores)
+    }
+
+    @Test
+    fun `the cpu share keeps the whole it is a share of`() {
+        val readings = EngineReadings().with(health(cpu = 12.0, usedGb = 1))
+            .with(Health(cpuPercent = 13.0, cpuCores = 1.5))
+        assertEquals(listOf(12.0, 13.0), readings.cpu)
+        assertEquals("1.5", readings.cpuCores)
+        // An engine that cannot say how many cores says nothing rather than zero.
+        assertEquals("1.5", readings.with(Health(cpuPercent = 14.0)).cpuCores)
+        assertEquals(null, EngineReadings().with(Health(cpuPercent = 15.0)).cpuCores)
     }
 
     @Test
