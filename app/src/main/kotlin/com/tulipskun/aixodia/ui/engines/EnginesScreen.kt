@@ -43,6 +43,7 @@ import androidx.compose.material3.ModalNavigationDrawer
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberDrawerState
+import androidx.compose.animation.core.MutableTransitionState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -83,6 +84,12 @@ import kotlinx.coroutines.launch
 /** How often the cards re-read an engine's `/healthz`. */
 private const val HEALTH_MS = 2_000L
 
+/** The blur's strength while the menu is up. */
+private const val BLUR_DP = 2f
+
+/** Long enough for the overlay's exit animation to finish before it is dropped. */
+private const val EXIT_HOLD_MS = 160L
+
 /**
  * The first screen: the engines the gateway knows about.
  *
@@ -114,8 +121,27 @@ fun EnginesScreen(
     // the one line that says how the last one ended. All three live here rather
     // than in the sheet: a result has to outlive the sheet being dismissed.
     val menuEngine = remember { mutableStateOf<EngineEntry?>(null) }
+    val menuOpen = remember { MutableTransitionState(false) }
     val menuWorking = remember { mutableStateOf("") }
     val menuNote = remember { mutableStateOf("") }
+
+    fun openMenu(engine: EngineEntry) {
+        menuNote.value = ""
+        menuWorking.value = ""
+        menuEngine.value = engine
+        menuOpen.targetState = true
+    }
+
+    // The overlay stays composed while it fades out: dropping the engine at the
+    // tap would take the tiles with it in one frame. The wait is the exit's own
+    // length, so nothing is left behind and nothing is cut short.
+    fun closeMenu() {
+        menuOpen.targetState = false
+        scope.launch {
+            delay(EXIT_HOLD_MS)
+            if (!menuOpen.targetState) menuEngine.value = null
+        }
+    }
     // What each card's strip draws. The windows belong to the app, not to this
     // screen: leaving the list for a thread and coming back must not empty them.
     val windows by readings.byEngine.collectAsState()
@@ -150,13 +176,19 @@ fun EnginesScreen(
         }
     }
 
-    // While the buttons are up the list goes out of focus: the blur says "the
-    // page is not what you are touching", and the scrim under it takes the taps
-    // that miss a button.
+    // While the tiles are up the list goes out of focus: the blur says "the page
+    // is not what you are touching", and the veil under them takes the taps that
+    // miss a tile.
+    //
+    // The blur is switched, not eased: a full-screen blur whose radius moves has
+    // to be recomputed every frame, and on a phone with no GPU that recompute
+    // costs more than the motion is worth — measured at ~3 frames a second. The
+    // veil and the tiles are what the eye reads as arriving; the page behind them
+    // may change in the frame the menu opens.
     Box(Modifier.fillMaxSize()) {
     Box(
         Modifier.fillMaxSize().then(
-            if (menuEngine.value != null) Modifier.blur(10.dp) else Modifier,
+            if (menuOpen.currentState) Modifier.blur(BLUR_DP.dp) else Modifier,
         ),
     ) {
     ModalNavigationDrawer(
@@ -267,11 +299,7 @@ fun EnginesScreen(
                                 }
                             }
                         },
-                        onMore = {
-                            menuNote.value = ""
-                            menuWorking.value = ""
-                            menuEngine.value = engine
-                        },
+                        onMore = { openMenu(engine) },
                     )
                 }
                 if (message.value.startsWith("Cannot reach")) {
@@ -297,6 +325,7 @@ fun EnginesScreen(
     menuEngine.value?.let { engine ->
         EngineActions(
             engine = engine,
+            open = menuOpen,
             working = menuWorking.value,
             note = menuNote.value,
             onUpdate = {
@@ -318,7 +347,7 @@ fun EnginesScreen(
                 }
             },
             onFiles = {
-                menuEngine.value = null
+                closeMenu()
                 message.value = engine.id
                 scope.launch {
                     val probe = engines.probe(engine.url)
@@ -332,7 +361,7 @@ fun EnginesScreen(
                     }
                 }
             },
-            onDismiss = { menuEngine.value = null },
+            onDismiss = { closeMenu() },
         )
     }
     }

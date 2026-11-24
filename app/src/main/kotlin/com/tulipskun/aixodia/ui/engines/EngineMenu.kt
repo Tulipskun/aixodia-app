@@ -1,5 +1,13 @@
 package com.tulipskun.aixodia.ui.engines
 
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.MutableTransitionState
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -23,6 +31,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -41,19 +50,42 @@ internal const val UPDATE = "update"
 internal const val BACKUP = "backup"
 
 /**
- * What **More** shows: three floating buttons in the middle of the screen.
+ * The veil over the page: a very pale grey, not white.
  *
- * No list, no captions — an icon each, at the centre, over the page blurred
- * behind them. The page is the context: the card that was pressed is still
- * under the blur in the place it was, so the buttons are read as belonging to
- * that machine rather than to a new screen.
+ * White over a near-black page is a different colour; grey is the same page one
+ * step lighter, which is what a blur needs to be seen against.
+ */
+private val Veil = Color(0xFFC6CBD4)
+private const val VEIL_ALPHA = 0.13f
+
+/** How long the veil and the tiles take to arrive, and the tiles to leave. */
+private const val VEIL_MS = 180
+private const val ENTER_MS = 200
+private const val EXIT_MS = 140
+
+/**
+ * What **More** shows: three tiles in the middle of the screen, over the page.
+ *
+ * No list: a verb written on a tile each, at the centre, over the page blurred
+ * behind them. The page is the context — the card that was pressed is still
+ * under the blur where it was — so the tiles are read as belonging to that
+ * machine rather than to a new screen.
  *
  * The blur belongs to the caller (it has to be applied to the content), so this
- * draws only the scrim, the buttons and the one line of feedback.
+ * draws the veil, the tiles and the one line of feedback. Everything it draws
+ * arrives and leaves on `open`: a menu that appears in one frame reads as a
+ * change of screen, and this is not a screen but a question about the card.
+ *
+ * `open` is a transition state rather than a flag because the overlay is only
+ * composed once it has something to show — a flag would already say "open" on
+ * the first frame and there would be nothing to animate from. The caller owns
+ * the state so it can close the menu and still hold it composed until the exit
+ * has played.
  */
 @Composable
 internal fun EngineActions(
     engine: EngineEntry,
+    open: MutableTransitionState<Boolean>,
     working: String,
     note: String,
     onUpdate: () -> Unit,
@@ -62,27 +94,42 @@ internal fun EngineActions(
     onDismiss: () -> Unit,
 ) {
     val idle = working.isEmpty()
+    // The veil arrives with the tiles rather than under them: a screen that
+    // dims first and grows buttons afterwards reads in two steps, and this is
+    // one gesture.
+    val veil by animateFloatAsState(
+        targetValue = if (open.targetState) 1f else 0f,
+        animationSpec = tween(VEIL_MS),
+        label = "veil",
+    )
     Box(Modifier.fillMaxSize()) {
-        // Tapping the blur dismisses; it must not also reach the card under it.
+        // Tapping the veil dismisses; it must not also reach the card under it.
         Box(
             Modifier
                 .fillMaxSize()
                 // The page under this is nearly black, so a black scrim only makes
-                // the blur read as "the screen went dark". A thin white veil
-                // instead lifts the blurred shapes to where the eye can see them
-                // as shapes without any of the text being readable.
-                .background(Color.White.copy(alpha = 0.10f))
+                // the blur read as "the screen went dark". A very pale grey lifts
+                // the blurred shapes to where the eye can see them as shapes while
+                // no text becomes readable again — and it is grey, not white, so
+                // the page stays the same colour it was, one step lighter.
+                .background(Veil.copy(alpha = VEIL_ALPHA * veil))
                 .clickable(
                     interactionSource = remember { MutableInteractionSource() },
                     indication = null,
                     onClick = onDismiss,
                 ),
         )
-        Column(
-            Modifier.fillMaxSize(),
-            verticalArrangement = Arrangement.Center,
-            horizontalAlignment = Alignment.CenterHorizontally,
+        AnimatedVisibility(
+            visibleState = open,
+            enter = fadeIn(tween(ENTER_MS)) +
+                scaleIn(initialScale = 0.92f, animationSpec = tween(ENTER_MS)),
+            exit = fadeOut(tween(EXIT_MS)) +
+                scaleOut(targetScale = 0.96f, animationSpec = tween(EXIT_MS)),
+            modifier = Modifier.align(Alignment.Center),
         ) {
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+            ) {
             Row(horizontalArrangement = Arrangement.spacedBy(Space.s3)) {
                 FloatingAction(
                     icon = Icons.Default.SystemUpdateAlt,
@@ -122,6 +169,7 @@ internal fun EngineActions(
                 overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.padding(horizontal = Space.s5),
             )
+                }
         }
     }
 }
