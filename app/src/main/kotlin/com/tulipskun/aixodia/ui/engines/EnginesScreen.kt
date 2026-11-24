@@ -594,7 +594,7 @@ internal fun EngineCard(
                 Spacer(Modifier.size(Space.s2))
                 Text(
                     if (busy) "checking…"
-                    else engine.subtitle.ifBlank { if (offline) "unreachable" else "online" },
+                    else engine.subtitle.ifBlank { if (offline) "offline" else "online" },
                     style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     fontFamily = FontFamily.Monospace,
