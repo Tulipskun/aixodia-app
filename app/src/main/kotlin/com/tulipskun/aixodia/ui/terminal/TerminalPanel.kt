@@ -739,7 +739,13 @@ fun TerminalWindow(
                                             switched = true
                                             return@LaunchedEffect
                                         }
-                                        if (directInput.value) view.showSoftKeyboard()
+                                        // keepSoftKeyboard, not showSoftKeyboard: the
+                                        // field that just left the layout still holds
+                                        // the IME, and the system answers its removal
+                                        // by hiding the keyboard a moment after this
+                                        // effect runs. The delayed re-show is what
+                                        // outlasts that.
+                                        if (directInput.value) view.keepSoftKeyboard()
                                     }
                                 }
                             }

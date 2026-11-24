@@ -392,7 +392,7 @@ internal fun EngineCard(
                 label = "RAM",
                 icon = Icons.Filled.Storage,
                 series = readings?.ram.orEmpty(),
-                digits = 1,
+                digits = MetricShape.decimalsFor(readings?.ramTotalGb),
                 unit = "GB",
                 total = readings?.ramTotalGb,
                 ceiling = readings?.ramTotalGb?.toDoubleOrNull() ?: 100.0,
@@ -402,7 +402,7 @@ internal fun EngineCard(
                 label = "DISK",
                 icon = Icons.Filled.SdStorage,
                 series = readings?.disk.orEmpty(),
-                digits = 1,
+                digits = MetricShape.decimalsFor(readings?.diskTotalGb),
                 unit = "GB",
                 total = readings?.diskTotalGb,
                 ceiling = readings?.diskTotalGb?.toDoubleOrNull() ?: 100.0,
@@ -451,6 +451,12 @@ private fun RowScope.MetricCell(
     first: Boolean,
 ) {
     val (value, suffix) = MetricShape.reading(series, digits, unit, total)
+    // A ratio too wide for the column takes its unit up with the name, so
+    // nothing on the card is clipped into a different unit. A single share
+    // (`16 % of 4`) is short enough by construction and keeps its unit.
+    val unitMoved = total != null && !MetricShape.unitFits(value, suffix)
+    val name = if (unitMoved) "$label $suffix" else label
+    val after = if (unitMoved) "" else suffix
     Row(Modifier.weight(1f)) {
         if (!first) {
             Box(
@@ -470,7 +476,7 @@ private fun RowScope.MetricCell(
                 )
                 Spacer(Modifier.size(Space.s1))
                 Text(
-                    label,
+                    name,
                     style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     fontFamily = FontFamily.Monospace,
@@ -487,9 +493,9 @@ private fun RowScope.MetricCell(
                     fontFamily = FontFamily.Monospace,
                     maxLines = 1,
                 )
-                if (suffix.isNotBlank()) {
+                if (after.isNotBlank()) {
                     Text(
-                        suffix,
+                        after,
                         style = MaterialTheme.typography.labelMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         fontFamily = FontFamily.Monospace,

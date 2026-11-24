@@ -1,6 +1,7 @@
 package com.tulipskun.aixodia.readings
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -110,5 +111,29 @@ class MetricShapeTest {
         // Nothing said is nothing drawn, not "0 cores".
         assertEquals(null, MetricShape.cores(null))
         assertEquals(null, MetricShape.cores(0.0))
+    }
+
+    @Test
+    fun `a capacity of three digits is said in whole gigabytes`() {
+        // `40.2/256` is wider than a third of a phone card and was cut off; a
+        // number that cannot be read is worse than one with fewer decimals.
+        assertEquals(0, MetricShape.decimalsFor("256"))
+        assertEquals(0, MetricShape.decimalsFor("1024"))
+        assertEquals(1, MetricShape.decimalsFor("8"))
+        assertEquals(1, MetricShape.decimalsFor("40"))
+        assertEquals(1, MetricShape.decimalsFor(null))
+    }
+
+    @Test
+    fun `a unit moves beside the name when the number fills the column`() {
+        // What fits: `5.2/8 GB` — eight glyphs, the widest that did not clip.
+        assertTrue(MetricShape.unitFits("5.2/8", "GB"))
+        // What does not: `40/256 GB` was clipped into `40/256 G`, and a tenth of
+        // a gigabyte on a small disk (`40.2/40 GB`) is wider still.
+        assertFalse(MetricShape.unitFits("40/256", "GB"))
+        assertFalse(MetricShape.unitFits("40.2/40", "GB"))
+        assertFalse(MetricShape.unitFits("7.3/1024", "GB"))
+        // Nothing after the number is never too wide.
+        assertTrue(MetricShape.unitFits("40/256", ""))
     }
 }

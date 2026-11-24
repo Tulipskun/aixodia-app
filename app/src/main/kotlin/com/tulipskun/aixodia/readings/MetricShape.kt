@@ -74,6 +74,33 @@ internal object MetricShape {
         return String.format(Locale.ROOT, "%.${digits}f", rounded)
     }
 
+    /**
+     * How many decimals a `used/total` reading can afford.
+     *
+     * Three digits of capacity plus a decimal and a slash is wider than a third of
+     * a phone card: `40.2/256 GB` was cut off mid-number, and a truncated number is
+     * worse than a coarser one. A capacity of a hundred or more — a host disk —
+     * therefore prints whole gigabytes, and a small one keeps its tenth.
+     */
+    fun decimalsFor(total: String?): Int {
+        val digits = total?.count { it.isDigit() } ?: 0
+        return if (digits >= 3) 0 else 1
+    }
+
+    /**
+     * Whether a unit can sit after the number it belongs to.
+     *
+     * A card is a third of a phone wide, and a number that fills it has no room
+     * left: `40/256 GB` was printed as `40/256 G`, which is a different unit. When
+     * the row is this wide the unit moves up beside the name instead — `DISK GB`
+     * with `40/256` under it — because a unit that is wrong or missing is worse
+     * than one that is somewhere else on the same card.
+     */
+    fun unitFits(value: String, unit: String): Boolean {
+        if (unit.isEmpty()) return true
+        return value.length + 1 + unit.length <= 8
+    }
+
     /** Gigabytes from bytes, the unit the console reads memory and disk in. */
     fun toGb(bytes: Long?): Double? = bytes?.let { it / 1024.0 / 1024.0 / 1024.0 }
 
