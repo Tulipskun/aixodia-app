@@ -1,6 +1,7 @@
 package com.tulipskun.aixodia.ui.screen
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -82,5 +83,25 @@ class PointerArtTest {
         val zoomed = PointerArt.bitmapRect(0f, 0f, 24, 24, 0, 0, 2f)
         assertEquals(48f, zoomed.width, 0f)
         assertEquals(48f, zoomed.height, 0f)
+    }
+
+    @Test
+    fun a_shape_is_only_drawn_where_the_machine_said_it_was() {
+        // The phone showed an I-beam over a tab strip: the shape was the
+        // machine's, read at the omnibox, and it was drawn at the arrow's place
+        // instead. Two places a rounding apart are the same place; a tab strip
+        // and an omnibox are not.
+        assertTrue(PointerArt.samePlace(120 to 40, 121 to 41))
+        assertTrue(PointerArt.samePlace(120 to 40, 120 to 40))
+        assertFalse(PointerArt.samePlace(120 to 40, 123 to 40))
+        assertFalse(PointerArt.samePlace(120 to 40, 120 to 70))
+    }
+
+    @Test
+    fun a_shape_with_no_place_is_not_trusted() {
+        // An engine that did not say where the shape was read leaves the pane
+        // with a shape it cannot place, and guessing is how the lie started.
+        assertFalse(PointerArt.samePlace(null, 120 to 40))
+        assertFalse(PointerArt.samePlace(120 to 40, null))
     }
 }

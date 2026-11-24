@@ -154,6 +154,15 @@ class ScreenSocket(
             val hotY: Int,
             val rgba: ByteArray,
             /**
+             * Where the machine's pointer was when this shape was read, in the
+             * picture's own pixels, or null when the engine did not say.
+             *
+             * Without it the shape is an answer with no question: drawn at the
+             * arrow's place it puts an I-beam over a tab strip, because the shape
+             * is the machine's and the place was ours.
+             */
+            val at: Pair<Int, Int>?,
+            /**
              * What the pointer is over: `text` when text can be typed there,
              * `pointer` for anything else.
              *
@@ -592,6 +601,8 @@ class ScreenSocket(
                         // Stored before it is announced: a tap that arrives
                         // between the two must see the new role, not the old.
                         cursorRole = parsed.optString("role", ROLE_POINTER)
+                        val atX = parsed.optInt("x", -1)
+                        val atY = parsed.optInt("y", -1)
                         events.trySend(
                             Event.Cursor(
                                 width = width,
@@ -599,6 +610,7 @@ class ScreenSocket(
                                 hotX = parsed.optInt("hot_x").coerceIn(0, width - 1),
                                 hotY = parsed.optInt("hot_y").coerceIn(0, height - 1),
                                 rgba = rgba,
+                                at = if (atX >= 0 && atY >= 0) atX to atY else null,
                                 role = parsed.optString("role", ROLE_POINTER),
                             ),
                         )

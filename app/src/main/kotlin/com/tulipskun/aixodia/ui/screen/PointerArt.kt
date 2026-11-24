@@ -30,6 +30,9 @@ object PointerArt {
     /** The black rim, in view pixels, at [SIZE]. */
     const val RIM = 1f
 
+    /** How far apart two places may be and still be the same place, in pixels. */
+    const val PLACE_SLACK = 2
+
     /**
      * The arrow as a share of its own height, tip first at (0, 0).
      *
@@ -76,6 +79,19 @@ object PointerArt {
         val left = pointerX - hotX * drawn
         val top = pointerY - hotY * drawn
         return FloatBox(left, top, width * drawn, height * drawn)
+    }
+
+    /**
+     * True when a shape's place is the place the arrow is drawn at.
+     *
+     * A picture pixel or two of slack, because the two numbers are read at
+     * slightly different moments and a pointer that is standing still can be a
+     * rounding apart. Anything more than that is not the same place.
+     */
+    fun samePlace(one: Pair<Int, Int>?, other: Pair<Int, Int>?): Boolean {
+        if (one == null || other == null) return false
+        return kotlin.math.abs(one.first - other.first) <= PLACE_SLACK &&
+            kotlin.math.abs(one.second - other.second) <= PLACE_SLACK
     }
 
     /** The arrow, with its tip on ([x], [y]). */

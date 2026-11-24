@@ -529,10 +529,18 @@ class ScreenView(context: Context) : View(context) {
         // it keeps a floor size of its own, as the desktop viewers do. Shape,
         // size and rim live in [PointerArt], where they can be held to their
         // promises by a test instead of by eye.
-        // The machine's own cursor, when it has been sent: a hand over a link,
-        // an I-beam over text, a watch over something loading. Drawn where its
-        // hot spot lands, so the pixel that clicks is the pixel under the arrow.
-        val shape = cursorImage
+        // The machine's own cursor, when it has been sent *and* it belongs
+        // here: a hand over a link, an I-beam over text, a watch over something
+        // loading. The shape arrives with the place the machine's pointer was at
+        // when it was read, and it is only drawn while that place is where our
+        // arrow is. A shape drawn at a place of our own making is how an I-beam
+        // ends up over a tab strip — the shape was the machine's, the place was
+        // ours, and the reader was told "you can type here" about a place they
+        // cannot. While the arrow is somewhere else the honest drawing is the
+        // plain arrow, which claims nothing.
+        val shape = cursorImage?.takeIf { image ->
+            image.at != null && PointerArt.samePlace(image.at, at)
+        }
         if (shape != null) {
             val rect = PointerArt.bitmapRect(
                 pointerX = x,
@@ -567,7 +575,14 @@ class ScreenView(context: Context) : View(context) {
      * recycled: a cursor is small, but a link under a moving finger can change it
      * many times a minute and none of those bitmaps is free.
      */
-    fun setCursorImage(width: Int, height: Int, hotX: Int, hotY: Int, rgba: ByteArray) {
+    fun setCursorImage(
+        width: Int,
+        height: Int,
+        hotX: Int,
+        hotY: Int,
+        rgba: ByteArray,
+        at: Pair<Int, Int>?,
+    ) {
         if (width <= 0 || height <= 0 || rgba.size != width * height * 4) return
         val pixels = IntArray(width * height)
         for (i in pixels.indices) {
@@ -580,7 +595,7 @@ class ScreenView(context: Context) : View(context) {
         }
         val bitmap = Bitmap.createBitmap(pixels, width, height, Bitmap.Config.ARGB_8888)
         val previous = cursorImage
-        cursorImage = CursorImage(bitmap, width, height, hotX, hotY)
+        cursorImage = CursorImage(bitmap, width, height, hotX, hotY, at)
         previous?.bitmap?.recycle()
         postInvalidateOnAnimation()
     }
@@ -592,6 +607,8 @@ class ScreenView(context: Context) : View(context) {
         val height: Int,
         val hotX: Int,
         val hotY: Int,
+        /** Where the machine's pointer was when this shape was read. */
+        val at: Pair<Int, Int>?,
     )
 
     private var cursorImage: CursorImage? = null
