@@ -160,10 +160,17 @@ fun EnginesScreen(
     // reports up are asked, so a card whose light is off does not spend every
     // sample waiting out a timeout, and the timer only runs while the screen is
     // the one being looked at: a phone in a pocket has no cards to keep current.
+    // A card is not the only thing that changes under this blur: the graphs are
+    // sampled every two seconds, and every sample re-renders the layer the blur
+    // is applied to — which on this phone means the whole page visibly re-blurs
+    // every two seconds. So the timer stands down while the menu is up. What is
+    // behind the blur is being decided about, not watched, and it is sampled
+    // again the moment the menu closes.
     val lifecycle = LocalLifecycleOwner.current
-    LaunchedEffect(engines, snapshot.value.engines) {
+    LaunchedEffect(engines, snapshot.value.engines, menuOpen.targetState) {
         val listed = snapshot.value.engines
         if (listed.isEmpty()) return@LaunchedEffect
+        if (menuOpen.targetState) return@LaunchedEffect
         lifecycle.repeatOnLifecycle(Lifecycle.State.RESUMED) {
             while (true) {
                 for (engine in listed) {
@@ -182,13 +189,17 @@ fun EnginesScreen(
     //
     // The blur is switched, not eased: a full-screen blur whose radius moves has
     // to be recomputed every frame, and on a phone with no GPU that recompute
-    // costs more than the motion is worth — measured at ~3 frames a second. The
-    // veil and the tiles are what the eye reads as arriving; the page behind them
-    // may change in the frame the menu opens.
+    // costs more than the motion is worth — measured at ~3 frames a second.
+    //
+    // It is switched at the *start* of the animation (`targetState`), not at the
+    // end (`currentState`): switching it late makes the page recede in a second,
+    // separate event after the tiles have already landed, which reads as a
+    // flash. Switched at once, the page recedes while the veil is arriving and
+    // the only thing that moves afterwards is the veil and the tiles.
     Box(Modifier.fillMaxSize()) {
     Box(
         Modifier.fillMaxSize().then(
-            if (menuOpen.currentState) Modifier.blur(BLUR_DP.dp) else Modifier,
+            if (menuOpen.targetState) Modifier.blur(BLUR_DP.dp) else Modifier,
         ),
     ) {
     ModalNavigationDrawer(

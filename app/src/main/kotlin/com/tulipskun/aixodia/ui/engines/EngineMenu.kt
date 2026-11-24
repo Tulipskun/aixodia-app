@@ -2,7 +2,6 @@ package com.tulipskun.aixodia.ui.engines
 
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.MutableTransitionState
-import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -31,7 +30,6 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -58,8 +56,7 @@ internal const val BACKUP = "backup"
 private val Veil = Color(0xFFC6CBD4)
 private const val VEIL_ALPHA = 0.13f
 
-/** How long the veil and the tiles take to arrive, and the tiles to leave. */
-private const val VEIL_MS = 180
+/** How long the tiles take to arrive, and to leave. */
 private const val ENTER_MS = 200
 private const val EXIT_MS = 140
 
@@ -94,14 +91,12 @@ internal fun EngineActions(
     onDismiss: () -> Unit,
 ) {
     val idle = working.isEmpty()
-    // The veil arrives with the tiles rather than under them: a screen that
-    // dims first and grows buttons afterwards reads in two steps, and this is
-    // one gesture.
-    val veil by animateFloatAsState(
-        targetValue = if (open.targetState) 1f else 0f,
-        animationSpec = tween(VEIL_MS),
-        label = "veil",
-    )
+    // The veil is not faded in, and that is a measurement rather than a taste:
+    // a full-screen alpha that changes has to be redrawn whole every frame, and
+    // each of those frames measured 250–600 ms on this phone (a swipe of the
+    // list measures the same, so the page is what is expensive, not the blur).
+    // A veil that is simply on, with only the tiles moving, leaves nothing on
+    // the screen to redraw but three small tiles.
     Box(Modifier.fillMaxSize()) {
         // Tapping the veil dismisses; it must not also reach the card under it.
         Box(
@@ -112,7 +107,10 @@ internal fun EngineActions(
                 // the blurred shapes to where the eye can see them as shapes while
                 // no text becomes readable again — and it is grey, not white, so
                 // the page stays the same colour it was, one step lighter.
-                .background(Veil.copy(alpha = VEIL_ALPHA * veil))
+                .background(
+                    if (open.targetState) Veil.copy(alpha = VEIL_ALPHA)
+                    else Color.Transparent,
+                )
                 .clickable(
                     interactionSource = remember { MutableInteractionSource() },
                     indication = null,
