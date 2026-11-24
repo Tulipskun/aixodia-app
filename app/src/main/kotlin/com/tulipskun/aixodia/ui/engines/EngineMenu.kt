@@ -1,6 +1,7 @@
 package com.tulipskun.aixodia.ui.engines
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -11,17 +12,16 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CloudUpload
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.SystemUpdateAlt
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Text
-import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -30,27 +30,33 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import com.tulipskun.aixodia.EngineEntry
 import com.tulipskun.aixodia.ui.theme.Space
 import com.tulipskun.aixodia.ui.theme.aixodia
 
-/** The row names this sheet uses for "which one is working". */
+/** The row names this menu uses for "which one is working". */
 internal const val UPDATE = "update"
 internal const val BACKUP = "backup"
 
 /**
- * The sheet behind a card's **More**.
+ * The menu behind a card's **More**: a panel in the middle of the screen.
  *
  * A card has room for three verbs beside it; everything else a machine can be
- * asked to do would crowd those three into seven. The sheet is the second
- * shelf: the machine's name at the top, then one row per verb, each with the
- * sentence that says what it will actually do.
+ * asked to do would crowd those three into seven. This is the second shelf —
+ * the machine's name, then one row per verb with the sentence that says what it
+ * will actually do.
+ *
+ * It sits in the centre rather than rising from the bottom because it is a
+ * question about *this card*, asked while looking at the list: a sheet covers
+ * the card it belongs to, and the reader loses the machine they are deciding
+ * about. The panel keeps the list visible behind it and the card in place.
  *
  * The rows are three because three things exist to be said. A fourth that
  * nothing implements would be drawn disabled and would teach the reader that
- * the sheet is decoration; adding one here is one row and one call site.
+ * the menu is decoration; adding one is one row and one call site.
  */
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 internal fun EngineMenu(
     engine: EngineEntry,
@@ -61,31 +67,48 @@ internal fun EngineMenu(
     onFiles: () -> Unit,
     onDismiss: () -> Unit,
 ) {
-    val sheet = rememberModalBottomSheetState(skipPartiallyExpanded = true)
-    ModalBottomSheet(
+    Dialog(
         onDismissRequest = onDismiss,
-        sheetState = sheet,
-        containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
-        contentColor = MaterialTheme.colorScheme.onSurface,
+        // The default width is a percentage of the window taken by the dialog
+        // system; this panel decides its own, so a long description line is not
+        // wrapped by a number nobody here chose.
+        properties = DialogProperties(usePlatformDefaultWidth = false),
     ) {
-        Column(Modifier.fillMaxWidth().padding(horizontal = Space.s4)) {
+        val shape = RoundedCornerShape(14.dp)
+        Column(
+            Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 32.dp)
+                .background(MaterialTheme.colorScheme.surfaceContainerHigh, shape)
+                .border(1.dp, MaterialTheme.aixodia.line, shape)
+                .padding(horizontal = Space.s4, vertical = Space.s3),
+        ) {
             // The console's head: what this is about, and what it is.
-            Text(
-                engine.name,
-                style = MaterialTheme.typography.titleMedium,
-                fontFamily = FontFamily.Monospace,
-                fontWeight = FontWeight.SemiBold,
-                color = MaterialTheme.colorScheme.onSurface,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-            Text(
-                if (engine.online) "engine menu" else "engine menu · unreachable",
-                style = MaterialTheme.typography.labelMedium,
-                fontFamily = FontFamily.Monospace,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-            Spacer(Modifier.height(Space.s3))
+            Row(
+                Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween,
+            ) {
+                Text(
+                    engine.name,
+                    style = MaterialTheme.typography.titleMedium,
+                    fontFamily = FontFamily.Monospace,
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f, fill = false),
+                )
+                Spacer(Modifier.width(Space.s3))
+                Text(
+                    if (engine.online) "engine menu" else "unreachable",
+                    style = MaterialTheme.typography.labelSmall,
+                    fontFamily = FontFamily.Monospace,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            Spacer(Modifier.height(Space.s2))
+            Hairline()
 
             MenuRow(
                 icon = Icons.Default.SystemUpdateAlt,
@@ -95,6 +118,7 @@ internal fun EngineMenu(
                 enabled = working.isEmpty(),
                 onClick = onUpdate,
             )
+            Hairline()
             MenuRow(
                 icon = Icons.Default.CloudUpload,
                 title = "Back up now",
@@ -103,6 +127,7 @@ internal fun EngineMenu(
                 enabled = working.isEmpty(),
                 onClick = onBackup,
             )
+            Hairline()
             MenuRow(
                 icon = Icons.Default.Folder,
                 title = "Files",
@@ -112,23 +137,29 @@ internal fun EngineMenu(
                 onClick = onFiles,
             )
 
+            // The result of the last row, under them: the answer belongs to
+            // the row that was pressed, so it is read in the same place. Only
+            // there when there is something to say — an empty two-line box
+            // under the last row reads as a fourth row that failed to load.
             if (note.isNotEmpty()) {
-                Spacer(Modifier.height(Space.s2))
-                Box(
-                    Modifier.fillMaxWidth().height(1.dp)
-                        .background(MaterialTheme.aixodia.line),
-                )
                 Spacer(Modifier.height(Space.s2))
                 Text(
                     note,
                     style = MaterialTheme.typography.labelMedium,
                     fontFamily = FontFamily.Monospace,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
                 )
             }
-            Spacer(Modifier.height(Space.s4))
         }
     }
+}
+
+/** The hairline the console draws where two darks meet. */
+@Composable
+private fun Hairline() {
+    Box(Modifier.fillMaxWidth().height(1.dp).background(MaterialTheme.aixodia.line))
 }
 
 /** One verb: an icon, a name, and the sentence that keeps it honest. */
@@ -163,6 +194,8 @@ private fun MenuRow(
                 detail,
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
             )
         }
         if (busy) {
