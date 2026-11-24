@@ -30,9 +30,6 @@ object PointerArt {
     /** The black rim, in view pixels, at [SIZE]. */
     const val RIM = 1f
 
-    /** How far apart two places may be and still be the same place, in pixels. */
-    const val PLACE_SLACK = 2
-
     /**
      * The arrow as a share of its own height, tip first at (0, 0).
      *
@@ -57,41 +54,42 @@ object PointerArt {
     /** The rim width that goes with a sprite of [size] view pixels. */
     fun rim(size: Float): Float = RIM * (size / SIZE)
 
+    /** How thick the text cursor's strokes are, at [size]. */
+    fun textStroke(size: Float): Float = max(1.6f, size * 0.14f)
+
+    /** How wide its serifs are, at [size]. */
+    fun textSerif(size: Float): Float = size * 0.5f
+
     /**
-     * Where a cursor bitmap is drawn, given the pointer's place on screen.
+     * The text cursor's three strokes, centred on ([x], [y]).
      *
-     * The hot spot — the pixel of the image that *is* the pointer — goes on the
-     * pointer, and the rest of the image hangs around it. The image is scaled
-     * with the picture so it looks the size the desktop drew it, but never below
-     * its own pixels: a fitted picture would otherwise shrink an I-beam to a
-     * smudge.
+     * A bar with a serif at each end, the way desktop pointers have always drawn
+     * it. Numbers rather than a path, so a test can hold the shape the way
+     * [OUTLINE] holds the arrow's.
      */
-    fun bitmapRect(
-        pointerX: Float,
-        pointerY: Float,
-        width: Int,
-        height: Int,
-        hotX: Int,
-        hotY: Int,
-        scale: Float,
-    ): FloatBox {
-        val drawn = max(1f, scale)
-        val left = pointerX - hotX * drawn
-        val top = pointerY - hotY * drawn
-        return FloatBox(left, top, width * drawn, height * drawn)
+    fun textBars(x: Float, y: Float, size: Float): List<FloatBox> {
+        val half = size / 2f
+        val stroke = textStroke(size)
+        val serif = textSerif(size)
+        return listOf(
+            FloatBox(x - stroke / 2f, y - half, stroke, size),
+            FloatBox(x - serif / 2f, y - half, serif, stroke),
+            FloatBox(x - serif / 2f, y + half - stroke, serif, stroke),
+        )
     }
 
     /**
-     * True when a shape's place is the place the arrow is drawn at.
+     * The text cursor, drawn at ([x], [y]).
      *
-     * A picture pixel or two of slack, because the two numbers are read at
-     * slightly different moments and a pointer that is standing still can be a
-     * rounding apart. Anything more than that is not the same place.
+     * Drawn rather than echoed for the same reason as the arrow: the machine's
+     * echo only arrives with a picture, so it lags the finger. What the machine
+     * is asked instead is *what is under the pointer*, and that decides which of
+     * these two shapes is drawn.
      */
-    fun samePlace(one: Pair<Int, Int>?, other: Pair<Int, Int>?): Boolean {
-        if (one == null || other == null) return false
-        return kotlin.math.abs(one.first - other.first) <= PLACE_SLACK &&
-            kotlin.math.abs(one.second - other.second) <= PLACE_SLACK
+    fun pathText(x: Float, y: Float, size: Float): Path = Path().apply {
+        for (bar in textBars(x, y, size)) {
+            addRect(bar.left, bar.top, bar.left + bar.width, bar.top + bar.height, Path.Direction.CW)
+        }
     }
 
     /** The arrow, with its tip on ([x], [y]). */

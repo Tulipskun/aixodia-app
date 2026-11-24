@@ -226,17 +226,11 @@ fun ScreenPanel(
                     view?.invalidateFrame()
                 }
                 is ScreenSocket.Event.Cursor -> {
-                    // The machine's pointer changed shape — a hand, an I-beam, a
-                    // watch. The view draws it instead of its own arrow, so the
-                    // phone shows what the desktop is showing.
-                    view?.setCursorImage(
-                        event.width,
-                        event.height,
-                        event.hotX,
-                        event.hotY,
-                        event.rgba,
-                        event.at,
-                    )
+                    // The machine's pointer changed role — a hand, an I-beam, a
+                    // watch. The view draws its own arrow or I-beam, chosen by
+                    // this role: the machine says what is under the pointer, the
+                    // view says where the pointer is.
+                    view?.invalidateFrame()
                 }
                 is ScreenSocket.Event.Failed -> {
                     videoHasPicture = false

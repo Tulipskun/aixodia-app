@@ -529,89 +529,23 @@ class ScreenView(context: Context) : View(context) {
         // it keeps a floor size of its own, as the desktop viewers do. Shape,
         // size and rim live in [PointerArt], where they can be held to their
         // promises by a test instead of by eye.
-        // The machine's own cursor, when it has been sent *and* it belongs
-        // here: a hand over a link, an I-beam over text, a watch over something
-        // loading. The shape arrives with the place the machine's pointer was at
-        // when it was read, and it is only drawn while that place is where our
-        // arrow is. A shape drawn at a place of our own making is how an I-beam
-        // ends up over a tab strip — the shape was the machine's, the place was
-        // ours, and the reader was told "you can type here" about a place they
-        // cannot. While the arrow is somewhere else the honest drawing is the
-        // plain arrow, which claims nothing.
-        val shape = cursorImage?.takeIf { image ->
-            image.at != null && PointerArt.samePlace(image.at, at)
-        }
-        if (shape != null) {
-            val rect = PointerArt.bitmapRect(
-                pointerX = x,
-                pointerY = y,
-                width = shape.width,
-                height = shape.height,
-                hotX = shape.hotX,
-                hotY = shape.hotY,
-                scale = min(scaleX, scaleY),
-            )
-            val destination = RectF(
-                rect.left,
-                rect.top,
-                rect.left + rect.width,
-                rect.top + rect.height,
-            )
-            canvas.drawBitmap(shape.bitmap, null, destination, cursorFill)
-            return
-        }
+        //
+        // Two shapes, one of them drawn at a time: the arrow, and the text
+        // cursor. The machine decides *which*, and only which — its own cursor
+        // bitmap is never drawn here. That bitmap arrives with the place the
+        // machine's pointer was at when it was read, and the machine only speaks
+        // when a shape *changes*, so that place is frozen at the last change
+        // (a phone was found drawing an I-beam over a tab strip 300 picture
+        // pixels from where its pointer really was). Taking only the role means
+        // the place is always the finger's and the shape is always the
+        // machine's, and neither can contradict the other.
         val size = PointerArt.size(scaleX, scaleY)
-        val path = PointerArt.path(x, y, size)
+        val text = socket?.cursorRole == ScreenSocket.ROLE_TEXT
+        val path = if (text) PointerArt.pathText(x, y, size) else PointerArt.path(x, y, size)
         cursorEdge.strokeWidth = PointerArt.rim(size)
         canvas.drawPath(path, cursorEdge)
         canvas.drawPath(path, cursorFill)
     }
-
-    /**
-     * Takes the machine's pointer shape.
-     *
-     * Called for every cursor the engine reports, which is on a change of the
-     * window under the pointer and not on a clock. The bitmap it replaces is
-     * recycled: a cursor is small, but a link under a moving finger can change it
-     * many times a minute and none of those bitmaps is free.
-     */
-    fun setCursorImage(
-        width: Int,
-        height: Int,
-        hotX: Int,
-        hotY: Int,
-        rgba: ByteArray,
-        at: Pair<Int, Int>?,
-    ) {
-        if (width <= 0 || height <= 0 || rgba.size != width * height * 4) return
-        val pixels = IntArray(width * height)
-        for (i in pixels.indices) {
-            val at = i * 4
-            val r = rgba[at].toInt() and 0xff
-            val g = rgba[at + 1].toInt() and 0xff
-            val b = rgba[at + 2].toInt() and 0xff
-            val a = rgba[at + 3].toInt() and 0xff
-            pixels[i] = (a shl 24) or (r shl 16) or (g shl 8) or b
-        }
-        val bitmap = Bitmap.createBitmap(pixels, width, height, Bitmap.Config.ARGB_8888)
-        val previous = cursorImage
-        cursorImage = CursorImage(bitmap, width, height, hotX, hotY, at)
-        previous?.bitmap?.recycle()
-        postInvalidateOnAnimation()
-    }
-
-    /** The machine's pointer shape, and where its hot spot is in it. */
-    private class CursorImage(
-        val bitmap: Bitmap,
-        val width: Int,
-        val height: Int,
-        val hotX: Int,
-        val hotY: Int,
-        /** Where the machine's pointer was when this shape was read. */
-        val at: Pair<Int, Int>?,
-    )
-
-    private var cursorImage: CursorImage? = null
 
     /** Where the picture is drawn, after fit, zoom and pan. */
     private fun pictureRect(pictureWidth: Int, pictureHeight: Int): RectF {

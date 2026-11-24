@@ -148,35 +148,17 @@ class ScreenSocket(
          * [rgba] is straight RGBA, row by row, `width * height * 4` bytes.
          */
         data class Cursor(
-            val width: Int,
-            val height: Int,
-            val hotX: Int,
-            val hotY: Int,
-            val rgba: ByteArray,
-            /**
-             * Where the machine's pointer was when this shape was read, in the
-             * picture's own pixels, or null when the engine did not say.
-             *
-             * Without it the shape is an answer with no question: drawn at the
-             * arrow's place it puts an I-beam over a tab strip, because the shape
-             * is the machine's and the place was ours.
-             */
-            val at: Pair<Int, Int>?,
             /**
              * What the pointer is over: `text` when text can be typed there,
              * `pointer` for anything else.
              *
-             * X answers this with the cursor the widget set, and the engine
-             * reads it off the shape, so a tap knows whether the phone's
-             * keyboard belongs on screen.
+             * The machine answers this with the cursor the widget set, and the
+             * engine reads it off the shape, so a tap knows whether the phone's
+             * keyboard belongs on screen, and the pane knows which of its two
+             * drawn shapes to show.
              */
             val role: String,
-        ) : Event {
-            // A data class with a ByteArray gets identity equality, which is
-            // right here: two cursors with the same bytes are still two events.
-            override fun equals(other: Any?): Boolean = this === other
-            override fun hashCode(): Int = System.identityHashCode(this)
-        }
+        ) : Event
         data class Failed(val reason: String) : Event
         data object Closed : Event
     }
@@ -584,37 +566,14 @@ class ScreenSocket(
                     events.trySend(Event.Ready(greeting))
                 }
                 "cursor" -> {
-                    // A cursor is drawn, not decoded: its size and hot spot are
-                    // what place it, and a malformed one is ignored so the
-                    // pointer keeps the shape it had rather than vanishing.
-                    val width = parsed.optInt("width")
-                    val height = parsed.optInt("height")
-                    val rgba = runCatching {
-                        android.util.Base64.decode(
-                            parsed.optString("rgba"),
-                            android.util.Base64.DEFAULT,
-                        )
-                    }.getOrNull()
-                    if (width in 1..MAX_CURSOR && height in 1..MAX_CURSOR &&
-                        rgba != null && rgba.size == width * height * 4
-                    ) {
-                        // Stored before it is announced: a tap that arrives
-                        // between the two must see the new role, not the old.
-                        cursorRole = parsed.optString("role", ROLE_POINTER)
-                        val atX = parsed.optInt("x", -1)
-                        val atY = parsed.optInt("y", -1)
-                        events.trySend(
-                            Event.Cursor(
-                                width = width,
-                                height = height,
-                                hotX = parsed.optInt("hot_x").coerceIn(0, width - 1),
-                                hotY = parsed.optInt("hot_y").coerceIn(0, height - 1),
-                                rgba = rgba,
-                                at = if (atX >= 0 && atY >= 0) atX to atY else null,
-                                role = parsed.optString("role", ROLE_POINTER),
-                            ),
-                        )
-                    }
+                    // Only the role is taken. The shape itself is the machine's
+                    // bitmap, and a bitmap arrives with the place the pointer was
+                    // at when the shape *changed* — a place frozen at the last
+                    // change, which the app would then have to draw at a place of
+                    // its own. The pane draws its own arrow and its own I-beam,
+                    // so all it needs to know is which of the two belongs here.
+                    cursorRole = parsed.optString("role", ROLE_POINTER)
+                    events.trySend(Event.Cursor(cursorRole))
                 }
                 "error" -> {
                     // The engine has nothing to show, and says why once before
@@ -769,15 +728,6 @@ class ScreenSocket(
 
         /** A frame that claims more tiles than the grid could hold is refused. */
         private const val MAX_TILES = 4096
-
-        /**
-         * The largest cursor that will be believed, in pixels.
-         *
-         * A cursor is sixteen or twenty-four pixels square. A message claiming
-         * thousands is not a cursor, and allocating for it is how a viewer is
-         * made to fall over by a broken frame.
-         */
-        private const val MAX_CURSOR = 128
 
         /** The role of every shape that is not a text cursor. */
         const val ROLE_POINTER = "pointer"
