@@ -154,6 +154,8 @@ import com.tulipskun.aixodia.ui.providers.ProvidersScreen
 import com.tulipskun.aixodia.ui.settings.BackupScreen
 import com.tulipskun.aixodia.ui.settings.SettingsScreen
 import com.tulipskun.aixodia.ui.files.FilesScreen
+import com.tulipskun.aixodia.ui.nav.Nav
+import com.tulipskun.aixodia.ui.nav.Place
 import com.tulipskun.aixodia.ui.terminal.TerminalUiState
 import com.tulipskun.aixodia.data.remote.ScreenSocket
 import com.tulipskun.aixodia.ui.screen.ScreenPanel
@@ -179,10 +181,15 @@ fun ChatScreen(
     discovery: DaemonDiscovery? = null,
     clientToken: ClientToken = ClientToken.shared,
     engines: com.tulipskun.aixodia.data.remote.EngineDirectory? = null,
-    /** Which surface to open first, from the engines card that was tapped. */
-    initialPane: String = "chat",
-    /** Returns to the engines list, the screen the app opens on. */
-    onBackToEngines: (() -> Unit)? = null,
+    /**
+     * The app's history: the pane showing, and the places back returns to.
+     *
+     * The panes beside the thread used to be six booleans on this screen, and
+     * the system back button had six handlers arguing about which of them was
+     * up. A history says the same thing once, and it says where each pane was
+     * opened *from* — which is the only thing back needs to know.
+     */
+    nav: Nav,
 ) {
     val isSignedIn by settings.isSignedInFlow.collectAsStateWithLifecycle(initialValue = false)
     val daemonUrl by settings.daemonUrlFlow.collectAsStateWithLifecycle(initialValue = "")
@@ -203,20 +210,9 @@ fun ChatScreen(
     }
     val configured = isSignedIn
     val sessId by settings.sessionFlow.collectAsStateWithLifecycle(initialValue = "")
-    // Saveable: a rotation in the terminal or in settings used to drop the
-    // reader back into the thread, losing the tab they were on.
-    var showSettings by rememberSaveable { mutableStateOf(initialPane == "settings") }
-    var showProviders by rememberSaveable { mutableStateOf(false) }
-    var showTerminal by rememberSaveable { mutableStateOf(initialPane == "terminal") }
-    // The machine's own display, beside the shell. It is a branch of the chat
-    // for the same reason the terminal is: it is the whole screen, because a
-    // desktop sharing a screen with a composer is a desktop in a letterbox.
-    var showScreen by rememberSaveable { mutableStateOf(initialPane == "screen") }
-    // The engine's backup is a branch of the chat like these three, because a
-    // run outlasts the window it was started from and the reader needs a place
-    // to come back to — not a line of text inside the chat it interrupts.
-    var showBackup by rememberSaveable { mutableStateOf(false) }
-    var showFiles by rememberSaveable { mutableStateOf(false) }
+    // Which pane is showing is the history's last entry, not a flag of this
+    // screen. A rotation in the terminal or in settings keeps it, because the
+    // history is saved, and so does leaving a pane for the drawer beside it.
 
     // The terminal's sockets, tabs and grids belong to this screen, not to the
     // visible window. Back only hides the window: every WebSocket stays
@@ -249,37 +245,20 @@ fun ChatScreen(
         }
     }
 
-    // Settings is a screen branch of the chat, not a separate Android route: the
-    // system back button has to return here, not leave the app.
-    BackHandler(enabled = showSettings) { showSettings = false }
-    BackHandler(enabled = showProviders) { showProviders = false }
-    // Back out of the machine's screen leaves for the engine list, the same way
-    // the terminal does: both are opened from an engine card, so that card is the
-    // screen behind them. The chat is a different thing about the same machine,
-    // and landing there from a full-screen view reads as being thrown out.
-    BackHandler(enabled = showScreen) {
-        if (onBackToEngines != null) onBackToEngines() else showScreen = false
-    }
-    BackHandler(enabled = showBackup) { showBackup = false }
-    BackHandler(enabled = showFiles) { showFiles = false }
-    // The engines list is the screen the app opens on; when none of the panes
-    // above is showing, the system back button returns there. Surface actions
-    // (terminal, screen) close first, so a second press leaves the chat.
-    if (onBackToEngines != null) {
-        BackHandler(enabled = !showSettings && !showProviders && !showTerminal &&
-            !showScreen && !showBackup && !showFiles) { onBackToEngines() }
-    }
-
+    // Back itself is the history popping, and the history's back is registered by
+    // the activity above this screen, so a pane placed on top of the chat closes
+    // before this screen does.
+    //
     // Read before the configured check: a run already going on the engine is
     // worth looking at even from an install whose own settings are not set up,
     // and this page only ever asks the daemon what it is doing.
-    if (showFiles) {
-        FilesScreen(settings = settings, clientToken = clientToken, onBack = { showFiles = false })
+    if (nav.current == Place.Files) {
+        FilesScreen(settings = settings, clientToken = clientToken, onBack = { nav.back() })
         return
     }
 
-    if (showBackup) {
-        BackupScreen(history = history, onBack = { showBackup = false })
+    if (nav.current == Place.Backup) {
+        BackupScreen(history = history, onBack = { nav.back() })
         return
     }
 
@@ -287,19 +266,19 @@ fun ChatScreen(
     // first launch cannot reach the network layer and crash. The settings
     // screen still has to open from here, or there would be no way to fix it.
     if (!configured) {
-        if (showSettings) {
+        if (nav.current == Place.Settings) {
             SettingsScreen(
                 settings = settings, history = history, socket = socket,
-                sessionId = sessId, onBack = { showSettings = false },
+                sessionId = sessId, onBack = { nav.back() },
                 discovery = discovery, engines = engines,
-                onOpenBackup = { showSettings = false; showBackup = true },
-                onOpenFiles = { showSettings = false; showFiles = true },
+                onOpenBackup = { nav.open(Place.Backup) },
+                onOpenFiles = { nav.open(Place.Files) },
             )
             return
         }
         SetupNeeded(
             daemonUrl = daemonUrl,
-            onOpenSettings = { showSettings = true },
+            onOpenSettings = { nav.open(Place.Settings) },
             onSignedIn = {
                 // The token is on disk now, so the very next request can use it.
                 // Probing on a timer would leave the header saying OFFLINE for up
@@ -319,7 +298,7 @@ fun ChatScreen(
     // screen, because a shell that shares a screen with a chat composer is a
     // shell in a letterbox. It needs no session and no view model: it talks to
     // the machine, not to the chat.
-    if (showScreen) {
+    if (nav.current == Place.Screen) {
         // The socket belongs to this branch: a screen nobody is looking at is a
         // socket the engine has to keep encoding for, so it is closed on the way
         // out rather than kept warm like the terminal's.
@@ -327,13 +306,13 @@ fun ChatScreen(
         ScreenPanel(
             socket = screenSocket,
             baseUrl = daemonUrl,
-            onLeave = { if (onBackToEngines != null) onBackToEngines() else showScreen = false },
+            onLeave = { nav.back() },
             modifier = Modifier.fillMaxSize(),
         )
         return
     }
 
-    if (showTerminal) {
+    if (nav.current == Place.Terminal) {
         // The socket and the per-tab emulators were created above and outlive
         // this branch. Leaving the window only hides it; the shells stay on the
         // engine and every tab's WebSocket stays attached for the trip back.
@@ -345,8 +324,12 @@ fun ChatScreen(
         TerminalWindow(
             socket = terminalSocket,
             ui = terminalUi,
-            onLeave = { if (onBackToEngines != null) onBackToEngines() else showTerminal = false },
-            onClose = { showTerminal = false },
+            onLeave = { nav.back() },
+            // Closing the tabs lands in the chat, not one place up: the shells are
+            // gone, and the pane behind the window is where the reader works. A
+            // terminal opened straight from a card has no chat behind it, so it
+            // closes onto the list it was opened from.
+            onClose = { if (!nav.backTo(Place.Chat)) nav.home() },
         )
         return
     }
@@ -405,13 +388,26 @@ fun ChatScreen(
     val drawer = rememberDrawerState(DrawerValue.Closed)
     val scope = rememberCoroutineScope()
 
-    // Back closes the chat drawer first. This handler is declared after the
-    // screen-level BackHandlers, so Compose gives it priority while the drawer
-    // is open; the app only leaves once the drawer is closed.
+    // Back closes the chat drawer first. This handler is composed below the
+    // activity's history back, so it is asked first while the drawer is open;
+    // the history only pops once the drawer is closed.
+    //
+    // It is armed only while the chat itself is showing. The drawer's state
+    // outlives the pane that replaced the chat — it is remembered here, above
+    // the branch — so a drawer left open under Settings used to answer the first
+    // press of back by closing itself, unseen, and the reader's press did
+    // nothing at all.
     BackHandler(
-        enabled = drawer.isOpen || drawer.targetValue != DrawerValue.Closed,
+        enabled = nav.current == Place.Chat &&
+            (drawer.isOpen || drawer.targetValue != DrawerValue.Closed),
     ) {
         scope.launch { drawer.close() }
+    }
+    // A drawer row that opens a screen closes the drawer on its way out: leaving
+    // it open under the new screen is what gave that press of back nothing to do.
+    val openFromDrawer: (Place) -> Unit = { place ->
+        scope.launch { drawer.close() }
+        nav.open(place)
     }
     // A draft belongs to the chat it was typed in, not to the screen: switching
     // away and back must not carry one chat's half-written message into another,
@@ -431,18 +427,18 @@ fun ChatScreen(
     var showPushNowDialog by remember { mutableStateOf(false) }
     var pushNowBusy by remember { mutableStateOf(false) }
 
-    if (showSettings) {
+    if (nav.current == Place.Settings) {
         SettingsScreen(
             settings = settings, history = history, socket = socket,
-            sessionId = vm.sessionId, onBack = { showSettings = false },
+            sessionId = vm.sessionId, onBack = { nav.back() },
             discovery = discovery, engines = engines,
-            onOpenBackup = { showSettings = false; showBackup = true },
-            onOpenFiles = { showSettings = false; showFiles = true },
+            onOpenBackup = { nav.open(Place.Backup) },
+            onOpenFiles = { nav.open(Place.Files) },
         )
         return
     }
-    if (showProviders) {
-        ProvidersScreen(history = history, onBack = { showProviders = false })
+    if (nav.current == Place.Providers) {
+        ProvidersScreen(history = history, onBack = { nav.back() })
         return
     }
 
@@ -528,9 +524,9 @@ fun ChatScreen(
         // engine and outlives this screen, so the menu's job is to put the reader
         // where it says how far it got and how it ended, not to fire a job off
         // blind from a dropdown and leave the answer on a line of chat text.
-        ComposerCommand(stringResource(R.string.backup_and_restore)) { showBackup = true },
-        ComposerCommand(stringResource(R.string.settings)) { showSettings = true },
-        ComposerCommand("Engines", enabled = onBackToEngines != null) { onBackToEngines?.invoke() },
+        ComposerCommand(stringResource(R.string.backup_and_restore)) { nav.open(Place.Backup) },
+        ComposerCommand(stringResource(R.string.settings)) { nav.open(Place.Settings) },
+        ComposerCommand("Engines") { nav.home() },
     )
     // The header counts from a clock the engine set once, so the number has to
     // advance on the phone: a one-second tick is enough for a "2h 15m" readout.
@@ -785,7 +781,7 @@ fun ChatScreen(
                         Row(
                             Modifier
                                 .fillMaxWidth()
-                                .clickable { showProviders = true }
+                                .clickable { openFromDrawer(Place.Providers) }
                                 .padding(horizontal = 16.dp, vertical = 10.dp),
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
@@ -806,7 +802,7 @@ fun ChatScreen(
                         // top bar next to the status dot. The footer is anchored to
                         // the bottom of the sheet, so this row sits low instead of
                         // floating under a long list.
-                        UpdateRow(settings) { showSettings = true }
+                        UpdateRow(settings) { openFromDrawer(Place.Settings) }
                     }
                 },
             )
@@ -941,8 +937,8 @@ fun ChatScreen(
                                 vm.loadProviders()
                                 showModelPicker = true
                             },
-                            onTerminal = { showTerminal = true },
-                            onScreen = { showScreen = true },
+                            onTerminal = { nav.open(Place.Terminal) },
+                            onScreen = { nav.open(Place.Screen) },
                             modifier = Modifier.align(Alignment.CenterHorizontally),
                             attachments = pendingAttachments,
                             uploading = uploading,

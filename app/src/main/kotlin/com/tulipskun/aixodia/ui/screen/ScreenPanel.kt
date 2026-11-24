@@ -12,7 +12,9 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.width
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.ime
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.windowInsetsPadding
@@ -31,6 +33,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.Lifecycle
@@ -127,6 +130,36 @@ fun ScreenPanel(
         view?.typing = keyboardShown
     }
 
+    // Back over the machine's screen puts the keyboard away before it leaves the
+    // screen. The keyboard is the thing on top, and a viewer whose first press of
+    // back throws away the whole desktop is a viewer that loses its place; this
+    // handler is composed here, so it is asked before the history pops.
+    BackHandler(enabled = keyboardShown) { keyboardShown = false }
+
+    // The phone's keyboard can go away without this pane being told: the IME
+    // consumes the back gesture itself, and the system can dismiss it for its own
+    // reasons. A bar left standing with no keyboard under it takes a strip off the
+    // desktop and does nothing, so the bar follows the keyboard down — but only a
+    // keyboard that has been up, because one that never appears (a hardware
+    // keyboard, a phone that refuses the IME) must not take the bar with it.
+    val density = LocalDensity.current
+    // Read in composition and kept here: the insets property is only readable
+    // while composing, and the decision below is taken in a coroutine.
+    val imeNow = remember { mutableIntStateOf(0) }
+    imeNow.intValue = WindowInsets.ime.getBottom(density)
+    val imeBottom = imeNow.intValue
+    var imeWasUp by remember { mutableStateOf(false) }
+    LaunchedEffect(imeBottom) {
+        if (imeBottom > 0) {
+            imeWasUp = true
+        } else if (imeWasUp) {
+            imeWasUp = false
+            // A raise that has not landed yet reads as "no keyboard" for a frame
+            // or two; the settle is what tells a dismissal from an animation.
+            delay(IME_SETTLE_MS)
+            if (imeNow.intValue == 0) keyboardShown = false
+        }
+    }
     DisposableEffect(Unit) {
         onDispose { video.stop() }
     }
@@ -407,3 +440,12 @@ private fun Centered(text: String) {
  * than a person's next tap.
  */
 private const val KEYBOARD_SETTLE_MS = 250L
+
+/**
+ * How long a keyboard that has gone is given to prove that it has gone.
+ *
+ * The phone's keyboard animates in and out, so a zero inset for a frame or two is
+ * an animation rather than a dismissal. Anything shorter than the animation reads
+ * a raise as a hide and takes the typing bar away while it is arriving.
+ */
+private const val IME_SETTLE_MS = 240L

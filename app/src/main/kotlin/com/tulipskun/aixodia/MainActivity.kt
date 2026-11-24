@@ -4,19 +4,20 @@ import android.content.Intent
 import android.os.Bundle
 import android.os.SystemClock
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.activity.SystemBarStyle
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
 import androidx.lifecycle.lifecycleScope
 import com.tulipskun.aixodia.ui.chat.ChatScreen
 import com.tulipskun.aixodia.ui.engines.EnginesScreen
-import com.tulipskun.aixodia.ui.files.FilesScreen
+import com.tulipskun.aixodia.ui.nav.Nav
+import com.tulipskun.aixodia.ui.nav.Place
 import com.tulipskun.aixodia.ui.theme.AIxodiaTheme
 import kotlinx.coroutines.launch
 
@@ -45,29 +46,30 @@ class MainActivity : ComponentActivity() {
                     // The engines list is the front door, as it is on the web.
                     // A card is checked before it is opened and becomes the
                     // active engine there; the chat is a screen of that choice.
-                    val openedPane = remember { mutableStateOf<String?>(null) }
-                    val pane = openedPane.value
-                    when {
-                        pane == null -> EnginesScreen(
+                    //
+                    // Everything above that door is one history, held here and
+                    // saved through a rotation: the screen showing is whichever
+                    // place is last, and back is one pop. A screen that needs to
+                    // catch back for something of its own — a drawer, a menu, a
+                    // keyboard — registers its own handler, and because it is
+                    // composed below this one it is asked first.
+                    val nav = rememberSaveable(saver = Nav.Saver) { Nav() }
+                    BackHandler(enabled = nav.canGoBack) { nav.back() }
+                    when (nav.current) {
+                        Place.Engines -> EnginesScreen(
                             engines = c.engines,
                             readings = c.readings,
                             history = c.historyApi,
-                            onOpen = { _, _, chosen -> openedPane.value = chosen },
-                            onOpenSettings = { openedPane.value = "settings" },
+                            onOpen = { _, _, place -> nav.open(place) },
+                            onOpenSettings = { nav.open(Place.Settings) },
                         )
-                        // A card's More sheet asks for the files of the machine it
-                        // names, not for the chat: this pane is the whole screen,
-                        // and backing out of it is the list it was opened from.
-                        pane == "files" -> FilesScreen(
-                            settings = c.settings,
-                            clientToken = c.clientToken,
-                            onBack = { openedPane.value = null },
-                        )
+                        // Every other place is a pane of one engine, and the
+                        // chat screen is the host of them: it owns the sockets
+                        // and the view model that the panes beside it share.
                         else -> ChatScreen(
                             repo = c.repo, settings = c.settings, history = c.historyApi,
                             socket = c.chat, discovery = c.discovery, engines = c.engines,
-                            initialPane = pane,
-                            onBackToEngines = { openedPane.value = null },
+                            nav = nav,
                         )
                     }
                 }

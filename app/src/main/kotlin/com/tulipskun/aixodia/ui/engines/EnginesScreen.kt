@@ -1,5 +1,6 @@
 package com.tulipskun.aixodia.ui.engines
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -76,6 +77,7 @@ import com.tulipskun.aixodia.readings.EngineReadingsStore
 import com.tulipskun.aixodia.readings.MetricShape
 import com.tulipskun.aixodia.ui.display.ConsoleBar
 import com.tulipskun.aixodia.ui.display.ScreenHead
+import com.tulipskun.aixodia.ui.nav.Place
 import com.tulipskun.aixodia.ui.theme.aixodia
 import com.tulipskun.aixodia.ui.theme.Space
 import kotlinx.coroutines.delay
@@ -109,7 +111,7 @@ fun EnginesScreen(
     engines: EngineDirectory,
     readings: EngineReadingsStore,
     history: HistoryApi,
-    onOpen: (EngineEntry, EngineDirectory.Probe, String) -> Unit,
+    onOpen: (EngineEntry, EngineDirectory.Probe, Place) -> Unit,
     onOpenSettings: () -> Unit,
 ) {
     val scope = rememberCoroutineScope()
@@ -142,6 +144,16 @@ fun EnginesScreen(
             if (!menuOpen.targetState) menuEngine.value = null
         }
     }
+    // Back closes what is drawn over the list before it leaves the app: the
+    // tiles first, then the drawer. Without this, pressing back with a menu up
+    // closed the whole app and the menu went with it — the one screen a reader
+    // is most likely to be surprised by, because nothing of the app is left
+    // showing when it happens.
+    BackHandler(enabled = menuOpen.targetState) { closeMenu() }
+    BackHandler(enabled = drawer.isOpen || drawer.targetValue != DrawerValue.Closed) {
+        scope.launch { drawer.close() }
+    }
+
     // What each card's strip draws. The windows belong to the app, not to this
     // screen: leaving the list for a thread and coming back must not empty them.
     val windows by readings.byEngine.collectAsState()
@@ -365,7 +377,7 @@ fun EnginesScreen(
                     message.value = ""
                     if (probe.ok) {
                         engines.select(engine.id)
-                        onOpen(engine, probe, "files")
+                        onOpen(engine, probe, Place.Files)
                     } else {
                         message.value = "Cannot reach ${engine.name}: " +
                             probe.error.ifBlank { "not an engine" }
@@ -426,7 +438,7 @@ internal fun DrawerNavRow(
 internal fun EngineCard(
     engine: EngineEntry,
     busy: Boolean,
-    onOpen: (String) -> Unit,
+    onOpen: (Place) -> Unit,
     onMore: () -> Unit,
     readings: EngineReadings? = null,
 ) {
@@ -537,9 +549,9 @@ internal fun EngineCard(
             Modifier.fillMaxWidth().padding(top = Space.s3),
             horizontalArrangement = Arrangement.spacedBy(Space.s2),
         ) {
-            EngineAction(Icons.Default.Terminal, "Terminal", offline || busy) { onOpen("terminal") }
-            EngineAction(Icons.Default.AutoAwesome, "AI", offline || busy) { onOpen("chat") }
-            EngineAction(Icons.Default.Monitor, "Screen", offline || busy) { onOpen("screen") }
+            EngineAction(Icons.Default.Terminal, "Terminal", offline || busy) { onOpen(Place.Terminal) }
+            EngineAction(Icons.Default.AutoAwesome, "AI", offline || busy) { onOpen(Place.Chat) }
+            EngineAction(Icons.Default.Monitor, "Screen", offline || busy) { onOpen(Place.Screen) }
             EngineAction(Icons.Default.MoreHoriz, "More", offline || busy, onClick = onMore)
         }
     }
