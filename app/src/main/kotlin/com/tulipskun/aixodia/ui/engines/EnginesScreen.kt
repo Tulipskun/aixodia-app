@@ -666,7 +666,11 @@ internal fun EngineCard(
             EngineAction(Icons.Default.Terminal, "Terminal", offline || busy) { onOpen(Place.Terminal) }
             EngineAction(Icons.Default.AutoAwesome, "AI", offline || busy) { onOpen(Place.Chat) }
             EngineAction(Icons.Default.Monitor, "Screen", offline || busy) { onOpen(Place.Screen) }
-            EngineAction(Icons.Default.MoreHoriz, "More", offline || busy, onClick = onMore)
+            // More stays reachable when the machine is not: a dead engine is the
+            // one a person most needs to rename or to delete, and both of those
+            // are the gateway's writes, not the machine's. The three panes above
+            // do need it, so they keep the ordinary rule.
+            EngineAction(Icons.Default.MoreHoriz, "More", busy, onClick = onMore)
         }
     }
 }
