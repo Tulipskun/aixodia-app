@@ -122,4 +122,25 @@ class EngineCatalogTest {
         )
         assertNull(EngineCatalog.registryUrl("not a url"))
     }
+
+    @Test
+    fun `a name of its own is drawn instead of the machine's`() {
+        val engines = EngineCatalog.parse(
+            """{"engines":[
+              {"id":"m-8a7d1192","name":"Primary Engine","alias":"Work bench",
+               "url":"https://engine.aixodia.dpdns.org/m-8a7d1192"},
+              {"id":"work-1","name":"Work","alias":"",
+               "url":"https://engine.aixodia.dpdns.org/work-1"},
+              {"id":"m-900e51e3","name":"m-900e51e3",
+               "url":"https://engine.aixodia.dpdns.org/m-900e51e3"}
+            ]}""",
+        )
+        assertEquals("Work bench", engines[0].displayName)
+        // An empty alias is nobody having named it, not a name that is blank.
+        assertEquals("Work", engines[1].displayName)
+        // A registry with no alias column at all still draws the machine's name.
+        assertEquals("m-900e51e3", engines[2].displayName)
+        // The id is what the path uses, and a name never moves it.
+        assertEquals("m-8a7d1192", engines[0].id)
+    }
 }

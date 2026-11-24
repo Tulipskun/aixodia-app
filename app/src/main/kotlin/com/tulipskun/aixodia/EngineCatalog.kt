@@ -8,6 +8,10 @@ import org.json.JSONObject
  * `id` is the path the engine answers under (`https://<host>/<id>/…`) and `url`
  * is the address to call. `online` is the gateway's own answer — "this engine
  * replied within the last minute" — so it is a hint, not a promise.
+ * [alias] is the name a person gave the machine in the app. It is a caption and
+ * nothing else: [id] is what every address, ticket and revocation uses, and
+ * renaming never moves it. An empty alias means nobody has named this machine
+ * yet, and [name] — the machine's own name — is what is drawn.
  */
 data class EngineEntry(
     val id: String,
@@ -17,7 +21,11 @@ data class EngineEntry(
     val tag: String = "",
     val online: Boolean = false,
     val version: String = "",
-)
+    val alias: String = "",
+) {
+    /** What a card draws: the name a person chose, else the machine's own. */
+    val displayName: String get() = alias.ifBlank { name.ifBlank { id } }
+}
 
 /**
  * The engine list, read and picked without a network or a Context.
@@ -52,6 +60,7 @@ object EngineCatalog {
                 tag = item.text("tag"),
                 online = item.optBoolean("online", false),
                 version = item.text("version"),
+                alias = item.text("alias"),
             )
         }
         return out

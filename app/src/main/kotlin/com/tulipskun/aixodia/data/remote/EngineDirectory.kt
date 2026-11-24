@@ -5,8 +5,10 @@ import com.tulipskun.aixodia.EngineEntry
 import com.tulipskun.aixodia.SettingsStore
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
+import okhttp3.RequestBody.Companion.toRequestBody
 import java.util.concurrent.TimeUnit
 
 /**
@@ -26,6 +28,7 @@ class EngineDirectory(
         .readTimeout(10, TimeUnit.SECONDS)
         .callTimeout(15, TimeUnit.SECONDS)
         .build(),
+    private val clientToken: ClientToken = ClientToken.shared,
 ) {
     /** The engines as last stored, without asking anyone. */
     suspend fun catalog(): List<EngineEntry> =
@@ -68,8 +71,7 @@ class EngineDirectory(
         return entry
     }
 
-    private fun read(url: String): String? {
-        val request = Request.Builder()
+    private fun read(url: String): String? {        val request = Request.Builder()
             .url(url)
             // The registry answers without a token: it is the one thing a phone
             // must be able to ask before it has signed in anywhere.
@@ -156,5 +158,74 @@ class EngineDirectory(
         val fetchedAt: Long,
     ) {
         val active: EngineEntry? get() = EngineCatalog.select(engines, activeId)
+    }
+
+    /**
+     * Asks the gateway to forget an engine.
+     *
+     * The registry is written by exactly one Worker, and that is the whole point
+     * of asking it: the row is the one place every client reads, so a delete here
+     * is a delete in the console's switcher and on the sign-in Worker's revocation
+     * list as well. The phone deletes nothing locally — the next [refresh] simply
+     * answers without the row.
+     *
+     * The request carries this phone's session, because a write to the registry is
+     * not something an anonymous caller may do. A gateway that says the engine is
+     * still beating is reported as exactly that: the machine would rewrite its own
+     * row within twenty seconds.
+     */
+    suspend fun delete(id: String): EngineDeleteAnswer = withContext(Dispatchers.IO) {
+        val (base, token) = writeTarget()
+            ?: return@withContext EngineDeleteAnswer.Failed("this phone has no gateway address")
+        if (token.isBlank()) return@withContext EngineDeleteAnswer.Failed("sign in to AIxodia first")
+        val url = "$base/api/engines/$id"
+        runCatching {
+            val request = Request.Builder().url(url)
+                .header("Authorization", "Bearer $token")
+                .header("Accept", "application/json")
+                .delete()
+                .build()
+            client.newCall(request).execute().use { response ->
+                EngineDeleteAnswer.parse(response.body?.string().orEmpty(), response.code)
+            }
+        }.getOrElse { EngineDeleteAnswer.Failed(it.message ?: "no reply") }
+    }
+
+    /**
+     * Gives an engine a name, without moving its id.
+     *
+     * The id is the machine's own address, so a rename is a caption written into
+     * one column the engine never touches. An empty name clears it, and the card
+     * goes back to drawing the machine's own name.
+     */
+    suspend fun rename(id: String, alias: String): EngineRenameAnswer = withContext(Dispatchers.IO) {
+        val (base, token) = writeTarget()
+            ?: return@withContext EngineRenameAnswer.Failed("this phone has no gateway address")
+        if (token.isBlank()) return@withContext EngineRenameAnswer.Failed("sign in to AIxodia first")
+        val body = org.json.JSONObject().put("alias", alias).toString()
+        runCatching {
+            val request = Request.Builder().url("$base/api/engines/$id")
+                .header("Authorization", "Bearer $token")
+                .header("Content-Type", "application/json")
+                .header("Accept", "application/json")
+                .patch(body.toRequestBody("application/json".toMediaType()))
+                .build()
+            client.newCall(request).execute().use { response ->
+                EngineRenameAnswer.parse(response.body?.string().orEmpty(), response.code)
+            }
+        }.getOrElse { EngineRenameAnswer.Failed(it.message ?: "no reply") }
+    }
+
+    /**
+     * The gateway's address and this phone's session, or null when the phone has
+     * no address yet.
+     *
+     * A registry write goes to the host part of the address the phone already
+     * has, exactly like the list read: one address, one Worker, one table.
+     */
+    private suspend fun writeTarget(): Pair<String, String>? {
+        val base = EngineCatalog.registryUrl(settings.current().daemonUrl) ?: return null
+        val token = runCatching { clientToken.get(settings.current(), settings) }.getOrDefault("")
+        return base to token
     }
 }

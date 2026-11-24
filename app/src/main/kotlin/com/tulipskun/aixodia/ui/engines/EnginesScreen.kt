@@ -33,6 +33,7 @@ import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.SdStorage
 import androidx.compose.material.icons.filled.Storage
 import androidx.compose.material.icons.filled.Terminal
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DrawerValue
@@ -41,8 +42,10 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalDrawerSheet
 import androidx.compose.material3.ModalNavigationDrawer
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberDrawerState
 import androidx.compose.animation.core.MutableTransitionState
 import androidx.compose.runtime.Composable
@@ -69,6 +72,7 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.repeatOnLifecycle
 import com.tulipskun.aixodia.EngineEntry
+import com.tulipskun.aixodia.data.remote.EngineDeleteAnswer
 import com.tulipskun.aixodia.data.remote.EngineDirectory
 import com.tulipskun.aixodia.data.remote.Health
 import com.tulipskun.aixodia.data.remote.HistoryApi
@@ -91,6 +95,9 @@ private const val BLUR_DP = 2f
 
 /** Long enough for the overlay's exit animation to finish before it is dropped. */
 private const val EXIT_HOLD_MS = 160L
+
+/** The same bound the gateway keeps on a name, so the field cannot hold what it would drop. */
+private const val ALIAS_MAX = 40
 
 /**
  * The first screen: the engines the gateway knows about.
@@ -126,6 +133,12 @@ fun EnginesScreen(
     val menuOpen = remember { MutableTransitionState(false) }
     val menuWorking = remember { mutableStateOf("") }
     val menuNote = remember { mutableStateOf("") }
+    // The two questions the menu asks before it writes: a new name, and whether
+    // to forget the machine. Held here, beside the menu's own state, because the
+    // dialogs outlive the tiles' exit animation.
+    val renameEngine = remember { mutableStateOf<EngineEntry?>(null) }
+    val renameText = remember { mutableStateOf("") }
+    val deleteEngine = remember { mutableStateOf<EngineEntry?>(null) }
 
     fun openMenu(engine: EngineEntry) {
         menuNote.value = ""
@@ -318,7 +331,7 @@ fun EnginesScreen(
                                     engines.select(engine.id)
                                     onOpen(engine, probe, pane)
                                 } else {
-                                    message.value = "Cannot reach ${engine.name}: ${probe.error.ifBlank { "not an engine" }}"
+                                    message.value = "Cannot reach ${engine.displayName}: ${probe.error.ifBlank { "not an engine" }}"
                                 }
                             }
                         },
@@ -340,7 +353,7 @@ fun EnginesScreen(
     }
     }
 
-    // The three verbs a card has no room for, as buttons over the blurred list.
+    // The verbs a card has no room for, as buttons over the blurred list.
     // Each one selects the engine whose More was pressed first: the phone
     // addresses one engine at a time through the address it stores, and a button
     // that asked engine B while the address said A would be asking the wrong
@@ -379,12 +392,113 @@ fun EnginesScreen(
                         engines.select(engine.id)
                         onOpen(engine, probe, Place.Files)
                     } else {
-                        message.value = "Cannot reach ${engine.name}: " +
+                        message.value = "Cannot reach ${engine.displayName}: " +
                             probe.error.ifBlank { "not an engine" }
                     }
                 }
             },
+            // A name and a deletion are the gateway's two writes, and both are
+            // asked in a dialog rather than done on the tile: one replaces what
+            // the reader typed, the other cannot be undone.
+            onRename = { renameEngine.value = engine; renameText.value = engine.alias },
+            onDelete = { deleteEngine.value = engine },
             onDismiss = { closeMenu() },
+        )
+    }
+
+    // A name is only a caption, so the dialog says so: the id the machine answers
+    // on is not changed by anything typed here.
+    renameEngine.value?.let { engine ->
+        AlertDialog(
+            onDismissRequest = { renameEngine.value = null },
+            title = { Text("Name this engine") },
+            text = {
+                Column {
+                    Text(
+                        "Shown in the app instead of ${engine.id}. The machine's id does not change.",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    Spacer(Modifier.height(Space.s3))
+                    OutlinedTextField(
+                        value = renameText.value,
+                        onValueChange = { renameText.value = it.take(ALIAS_MAX) },
+                        singleLine = true,
+                        label = { Text("Name") },
+                        placeholder = { Text(engine.id) },
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    enabled = menuWorking.value.isEmpty(),
+                    onClick = {
+                        val wanted = renameText.value
+                        renameEngine.value = null
+                        menuWorking.value = RENAME
+                        menuNote.value = ""
+                        scope.launch {
+                            menuNote.value = engines.rename(engine.id, wanted).headline()
+                            menuWorking.value = ""
+                            reload()
+                        }
+                    },
+                ) { Text("Save") }
+            },
+            dismissButton = {
+                TextButton(onClick = { renameEngine.value = null }) { Text("Cancel") }
+            },
+        )
+    }
+
+    // Deleting is the one irreversible verb in this screen, so it is asked about
+    // in words, with the machine's name in them, and with what it does *not* do:
+    // the row goes, the machine is untouched, and it registers itself again the
+    // next time it starts.
+    deleteEngine.value?.let { engine ->
+        AlertDialog(
+            onDismissRequest = { deleteEngine.value = null },
+            title = { Text("Delete ${engine.displayName}?") },
+            text = {
+                Text(
+                    "It is removed from the engine list for every client. The machine itself is " +
+                        "not touched, and an engine that starts again registers itself once more.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    enabled = menuWorking.value.isEmpty(),
+                    onClick = {
+                        deleteEngine.value = null
+                        menuWorking.value = DELETE
+                        menuNote.value = ""
+                        // Whose address this phone is dialling, before the list
+                        // changes under it.
+                        val wasActive = snapshot.value.active?.id == engine.id
+                        scope.launch {
+                            val answer = engines.delete(engine.id)
+                            menuNote.value = answer.headline()
+                            menuWorking.value = ""
+                            reload()
+                            if (answer is EngineDeleteAnswer.Deleted && wasActive) {
+                                // A phone pointed at the row that just went away
+                                // has to be pointed somewhere that exists.
+                                snapshot.value.engines
+                                    .firstOrNull { it.id != engine.id }
+                                    ?.let { engines.select(it.id) }
+                            }
+                        }
+                    },
+                ) {
+                    Text("Delete", color = MaterialTheme.colorScheme.error)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { deleteEngine.value = null }) { Text("Cancel") }
+            },
         )
     }
     }
@@ -462,7 +576,7 @@ internal fun EngineCard(
             horizontalArrangement = Arrangement.SpaceBetween,
         ) {
             Text(
-                engine.name,
+                engine.displayName,
                 style = MaterialTheme.typography.titleMedium,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,

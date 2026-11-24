@@ -23,6 +23,8 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CloudUpload
+import androidx.compose.material.icons.filled.DeleteOutline
+import androidx.compose.material.icons.filled.DriveFileRenameOutline
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.SystemUpdateAlt
 import androidx.compose.material3.CircularProgressIndicator
@@ -46,6 +48,8 @@ import com.tulipskun.aixodia.ui.theme.aixodia
 /** The names this overlay uses for "which one is working". */
 internal const val UPDATE = "update"
 internal const val BACKUP = "backup"
+internal const val RENAME = "rename"
+internal const val DELETE = "delete"
 
 /**
  * The veil over the page: a very pale grey, not white.
@@ -61,12 +65,18 @@ private const val ENTER_MS = 200
 private const val EXIT_MS = 140
 
 /**
- * What **More** shows: three tiles in the middle of the screen, over the page.
+ * What **More** shows: the verbs a card has no room for, as tiles in the middle
+ * of the screen, over the page.
  *
  * No list: a verb written on a tile each, at the centre, over the page blurred
  * behind them. The page is the context — the card that was pressed is still
  * under the blur where it was — so the tiles are read as belonging to that
  * machine rather than to a new screen.
+ *
+ * The tiles wrap three to a row. Four of them in one row is 388dp, wider than a
+ * 320dp phone, and a menu that runs off the screen edge is a verb nobody can
+ * reach. A second row is centred under the first, so the group still reads as
+ * one thing rather than as two lists.
  *
  * The blur belongs to the caller (it has to be applied to the content), so this
  * draws the veil, the tiles and the one line of feedback. Everything it draws
@@ -88,9 +98,15 @@ internal fun EngineActions(
     onUpdate: () -> Unit,
     onBackup: () -> Unit,
     onFiles: () -> Unit,
+    onRename: () -> Unit,
+    onDelete: () -> Unit,
     onDismiss: () -> Unit,
 ) {
     val idle = working.isEmpty()
+    // What the machine is called, in one place: the tiles' labels and the line
+    // under them must name the same thing, and an engine with a name of its own
+    // must never be captioned with the id it no longer shows.
+    val title = engine.displayName
     // The veil is not faded in, and that is a measurement rather than a taste:
     // a full-screen alpha that changes has to be redrawn whole every frame, and
     // each of those frames measured 250–600 ms on this phone (a swipe of the
@@ -128,36 +144,28 @@ internal fun EngineActions(
             Column(
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
-            Row(horizontalArrangement = Arrangement.spacedBy(Space.s3)) {
-                FloatingAction(
-                    icon = Icons.Default.SystemUpdateAlt,
-                    label = "Update",
-                    description = "Update ${engine.name}",
-                    busy = working == UPDATE,
-                    enabled = idle,
-                    onClick = onUpdate,
-                )
-                FloatingAction(
-                    icon = Icons.Default.CloudUpload,
-                    label = "Back up",
-                    description = "Back up ${engine.name}",
-                    busy = working == BACKUP,
-                    enabled = idle,
-                    onClick = onBackup,
-                )
-                FloatingAction(
-                    icon = Icons.Default.Folder,
-                    label = "Files",
-                    description = "Files on ${engine.name}",
-                    busy = false,
-                    enabled = idle,
-                    onClick = onFiles,
-                )
+            // The tiles, three to a row. Each row is its own Row so the widths
+            // stay the tiles' own instead of being stretched by a weight.
+            TILES.chunked(3).forEach { row ->
+                Row(horizontalArrangement = Arrangement.spacedBy(Space.s3)) {
+                    row.forEach { tile ->
+                        FloatingAction(
+                            icon = tile.icon,
+                            label = tile.label,
+                            description = "${tile.label} $title",
+                            busy = tile.working?.let { working == it } ?: false,
+                            enabled = idle,
+                            destructive = tile.destructive,
+                            onClick = tile.act(onUpdate, onBackup, onFiles, onRename, onDelete),
+                        )
+                    }
+                }
+                if (row !== TILES.chunked(3).last()) Spacer(Modifier.height(Space.s3))
             }
             // The machine's name, or the answer it just gave.
             Spacer(Modifier.height(Space.s4))
             Text(
-                if (note.isNotEmpty()) note else engine.name,
+                if (note.isNotEmpty()) note else title,
                 style = MaterialTheme.typography.labelMedium,
                 fontFamily = FontFamily.Monospace,
                 textAlign = TextAlign.Center,
@@ -170,6 +178,41 @@ internal fun EngineActions(
                 }
         }
     }
+}
+
+/** What one tile is, and which of the two names of "working" it answers to. */
+private class Tile(
+    val icon: ImageVector,
+    val label: String,
+    /** The [working] value this tile shows as a spinner, or null if it has none. */
+    val working: String? = null,
+    val destructive: Boolean = false,
+    /** Which verb of the menu this tile is. */
+    val verb: String,
+)
+
+private val TILES = listOf(
+    Tile(Icons.Default.SystemUpdateAlt, "Update", working = UPDATE, verb = UPDATE),
+    Tile(Icons.Default.CloudUpload, "Back up", working = BACKUP, verb = BACKUP),
+    Tile(Icons.Default.Folder, "Files", verb = "files"),
+    Tile(Icons.Default.DriveFileRenameOutline, "Rename", working = RENAME, verb = RENAME),
+    Tile(Icons.Default.DeleteOutline, "Delete", working = DELETE, destructive = true, verb = DELETE),
+)
+
+/** The press one tile makes, chosen by the verb written on it. */
+private fun Tile.act(
+    onUpdate: () -> Unit,
+    onBackup: () -> Unit,
+    onFiles: () -> Unit,
+    onRename: () -> Unit,
+    onDelete: () -> Unit,
+): () -> Unit = when (verb) {
+    UPDATE -> onUpdate
+    BACKUP -> onBackup
+    "files" -> onFiles
+    RENAME -> onRename
+    DELETE -> onDelete
+    else -> error("a tile with no verb")
 }
 
 /**
@@ -187,10 +230,14 @@ private fun FloatingAction(
     description: String,
     busy: Boolean,
     enabled: Boolean,
+    destructive: Boolean = false,
     onClick: () -> Unit,
 ) {
-    val ink = if (enabled) MaterialTheme.colorScheme.onSurface
-              else MaterialTheme.colorScheme.onSurfaceVariant
+    val ink = when {
+        !enabled -> MaterialTheme.colorScheme.onSurfaceVariant
+        destructive -> MaterialTheme.colorScheme.error
+        else -> MaterialTheme.colorScheme.onSurface
+    }
     Column(
         Modifier
             .size(width = 88.dp, height = 72.dp)
@@ -207,15 +254,19 @@ private fun FloatingAction(
             CircularProgressIndicator(
                 modifier = Modifier.size(20.dp),
                 strokeWidth = 2.dp,
-                color = MaterialTheme.colorScheme.primary,
+                color = if (destructive) MaterialTheme.colorScheme.error
+                        else MaterialTheme.colorScheme.primary,
             )
         } else {
             Icon(
                 icon,
                 contentDescription = null,
                 modifier = Modifier.size(20.dp),
-                tint = if (enabled) MaterialTheme.colorScheme.primary
-                       else MaterialTheme.colorScheme.onSurfaceVariant,
+                tint = when {
+                    !enabled -> MaterialTheme.colorScheme.onSurfaceVariant
+                    destructive -> MaterialTheme.colorScheme.error
+                    else -> MaterialTheme.colorScheme.primary
+                },
             )
         }
         Spacer(Modifier.height(Space.s1))

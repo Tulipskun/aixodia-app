@@ -4,13 +4,14 @@ import androidx.compose.animation.core.MutableTransitionState
 import app.cash.paparazzi.Paparazzi
 import com.tulipskun.aixodia.EngineEntry
 import com.tulipskun.aixodia.ui.engines.EngineActions
+import com.tulipskun.aixodia.ui.engines.DELETE
 import com.tulipskun.aixodia.ui.engines.UPDATE
 import com.tulipskun.aixodia.ui.theme.AIxodiaTheme
 import org.junit.Rule
 import org.junit.Test
 
 /**
- * What a card's **More** puts on the screen: three labelled tiles in the middle,
+ * What a card's **More** puts on the screen: labelled tiles in the middle,
  * with the machine's name under them and nothing else.
  *
  * The blur of the page behind belongs to the screen, not to this overlay, so
@@ -39,6 +40,8 @@ class EngineActionsSnapshots {
                 onUpdate = {},
                 onBackup = {},
                 onFiles = {},
+                onRename = {},
+                onDelete = {},
                 onDismiss = {},
             )
         }
@@ -56,6 +59,8 @@ class EngineActionsSnapshots {
                 onUpdate = {},
                 onBackup = {},
                 onFiles = {},
+                onRename = {},
+                onDelete = {},
                 onDismiss = {},
             )
         }
@@ -73,6 +78,46 @@ class EngineActionsSnapshots {
                 onUpdate = {},
                 onBackup = {},
                 onFiles = {},
+                onRename = {},
+                onDelete = {},
+                onDismiss = {},
+            )
+        }
+    }
+
+    /** An engine with a name of its own: the tiles act on the name, not the id. */
+    @Test
+    fun engineActionsNamed() = paparazzi.snapshot {
+        AIxodiaTheme {
+            EngineActions(
+                engine = engine.copy(alias = "Work bench"),
+                open = MutableTransitionState(true),
+                working = "",
+                note = "",
+                onUpdate = {},
+                onBackup = {},
+                onFiles = {},
+                onRename = {},
+                onDelete = {},
+                onDismiss = {},
+            )
+        }
+    }
+
+    /** Deleting is the last tile, and the only one drawn in the error colour. */
+    @Test
+    fun engineActionsDeleteWorking() = paparazzi.snapshot {
+        AIxodiaTheme {
+            EngineActions(
+                engine = engine,
+                open = MutableTransitionState(true),
+                working = DELETE,
+                note = "Deleted m-8a7d1192",
+                onUpdate = {},
+                onBackup = {},
+                onFiles = {},
+                onRename = {},
+                onDelete = {},
                 onDismiss = {},
             )
         }
