@@ -38,12 +38,12 @@ class EngineCardSnapshots {
 
     @Test
     fun engineCardOnline() = paparazzi.snapshot {
-        AIxodiaTheme { EngineCard(engine = online, busy = false, onOpen = {}) }
+        AIxodiaTheme { EngineCard(engine = online, busy = false, onOpen = {}, onMore = {}) }
     }
 
     @Test
     fun engineCardOffline() = paparazzi.snapshot {
-        AIxodiaTheme { EngineCard(engine = offline, busy = false, onOpen = {}) }
+        AIxodiaTheme { EngineCard(engine = offline, busy = false, onOpen = {}, onMore = {}) }
     }
 
     /**
@@ -60,6 +60,7 @@ class EngineCardSnapshots {
                 engine = online,
                 busy = false,
                 onOpen = {},
+                onMore = {},
                 readings = EngineReadings(
                     cpu = listOf(8.0, 22.0, 47.0, 63.0, 31.0, 18.0, 26.0, 41.0, 55.0, 38.0, 24.0, 33.0),
                     ram = listOf(2.1, 2.3, 2.6, 2.9, 3.4, 3.8, 4.1, 4.4, 4.6, 4.7, 4.8, 4.9),

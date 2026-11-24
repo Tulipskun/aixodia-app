@@ -16,6 +16,7 @@ import androidx.compose.ui.Modifier
 import androidx.lifecycle.lifecycleScope
 import com.tulipskun.aixodia.ui.chat.ChatScreen
 import com.tulipskun.aixodia.ui.engines.EnginesScreen
+import com.tulipskun.aixodia.ui.files.FilesScreen
 import com.tulipskun.aixodia.ui.theme.AIxodiaTheme
 import kotlinx.coroutines.launch
 
@@ -46,15 +47,23 @@ class MainActivity : ComponentActivity() {
                     // active engine there; the chat is a screen of that choice.
                     val openedPane = remember { mutableStateOf<String?>(null) }
                     val pane = openedPane.value
-                    if (pane == null) {
-                        EnginesScreen(
+                    when {
+                        pane == null -> EnginesScreen(
                             engines = c.engines,
                             readings = c.readings,
+                            history = c.historyApi,
                             onOpen = { _, _, chosen -> openedPane.value = chosen },
                             onOpenSettings = { openedPane.value = "settings" },
                         )
-                    } else {
-                        ChatScreen(
+                        // A card's More sheet asks for the files of the machine it
+                        // names, not for the chat: this pane is the whole screen,
+                        // and backing out of it is the list it was opened from.
+                        pane == "files" -> FilesScreen(
+                            settings = c.settings,
+                            clientToken = c.clientToken,
+                            onBack = { openedPane.value = null },
+                        )
+                        else -> ChatScreen(
                             repo = c.repo, settings = c.settings, history = c.historyApi,
                             socket = c.chat, discovery = c.discovery, engines = c.engines,
                             initialPane = pane,

@@ -689,6 +689,36 @@ class HistoryApi(
     /** Ends this session: the engine writes ~/.exit and the notebook restarts itself. */
     suspend fun pushNow(): Boolean = triggerPushNow()
 
+    /**
+     * Asks the engine to install the published build.
+     *
+     * `aixodia update` reaches an engine as `kill -USR1`; a phone is not on the
+     * machine and cannot send a signal, so the same request travels as a POST.
+     * The engine answers before it swaps — the swap is an `execve` under the
+     * same pid — so `Queued` is the expected reply on a machine that is behind.
+     */
+    suspend fun requestUpdate(): EngineUpdateAnswer = withContext(Dispatchers.IO) {
+        val c = engineConfig()
+        val base = absoluteUrl(c.daemonUrl)
+            ?: return@withContext EngineUpdateAnswer.Failed("this phone has no engine address")
+        runCatchingCancellable {
+            val req = Request.Builder().url("$base/api/update")
+                .header("Authorization", "Bearer " + c.token)
+                .header("Accept", "application/json")
+                .header("Content-Type", "application/json")
+                .post("{}".toRequestBody("application/json".toMediaType()))
+                .build()
+            client.newCall(req).execute().use { r ->
+                val body = r.body?.string().orEmpty()
+                if (r.code == 401) {
+                    EngineUpdateAnswer.Failed("sign in to AIxodia first")
+                } else {
+                    EngineUpdateAnswer.parse(body, r.code)
+                }
+            }
+        }.getOrElse { EngineUpdateAnswer.Failed(it.message ?: "no reply") }
+    }
+
     /** Recent engine log entries (newest first), for debugging. */
     suspend fun fetchLogs(limit: Int = 200): List<JSONObject> = withContext(Dispatchers.IO) {
         val c = engineConfig()

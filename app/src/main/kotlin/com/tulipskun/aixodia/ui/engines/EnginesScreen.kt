@@ -68,6 +68,7 @@ import androidx.lifecycle.repeatOnLifecycle
 import com.tulipskun.aixodia.EngineEntry
 import com.tulipskun.aixodia.data.remote.EngineDirectory
 import com.tulipskun.aixodia.data.remote.Health
+import com.tulipskun.aixodia.data.remote.HistoryApi
 import com.tulipskun.aixodia.readings.EngineReadings
 import com.tulipskun.aixodia.readings.EngineReadingsStore
 import com.tulipskun.aixodia.readings.MetricShape
@@ -99,6 +100,7 @@ private const val HEALTH_MS = 2_000L
 fun EnginesScreen(
     engines: EngineDirectory,
     readings: EngineReadingsStore,
+    history: HistoryApi,
     onOpen: (EngineEntry, EngineDirectory.Probe, String) -> Unit,
     onOpenSettings: () -> Unit,
 ) {
@@ -107,6 +109,12 @@ fun EnginesScreen(
     val snapshot = remember { mutableStateOf(EngineDirectory.Snapshot(emptyList(), "", 0)) }
     val loading = remember { mutableStateOf(true) }
     val message = remember { mutableStateOf("") }
+    // The card whose More was pressed, the row of the sheet that is working, and
+    // the one line that says how the last one ended. All three live here rather
+    // than in the sheet: a result has to outlive the sheet being dismissed.
+    val menuEngine = remember { mutableStateOf<EngineEntry?>(null) }
+    val menuWorking = remember { mutableStateOf("") }
+    val menuNote = remember { mutableStateOf("") }
     // What each card's strip draws. The windows belong to the app, not to this
     // screen: leaving the list for a thread and coming back must not empty them.
     val windows by readings.byEngine.collectAsState()
@@ -249,6 +257,11 @@ fun EnginesScreen(
                                 }
                             }
                         },
+                        onMore = {
+                            menuNote.value = ""
+                            menuWorking.value = ""
+                            menuEngine.value = engine
+                        },
                     )
                 }
                 if (message.value.startsWith("Cannot reach")) {
@@ -263,6 +276,52 @@ fun EnginesScreen(
                 }
             }
         }
+    }
+
+    // The second shelf of verbs. Every row acts on the engine whose More was
+    // pressed, which means selecting it first: the phone addresses one engine at
+    // a time through the address it stores, and a menu that asked engine B while
+    // the address said A would be asking the wrong machine.
+    menuEngine.value?.let { engine ->
+        EngineMenu(
+            engine = engine,
+            working = menuWorking.value,
+            note = menuNote.value,
+            onUpdate = {
+                menuWorking.value = UPDATE
+                menuNote.value = ""
+                scope.launch {
+                    engines.select(engine.id)
+                    menuNote.value = history.requestUpdate().headline()
+                    menuWorking.value = ""
+                }
+            },
+            onBackup = {
+                menuWorking.value = BACKUP
+                menuNote.value = ""
+                scope.launch {
+                    engines.select(engine.id)
+                    menuNote.value = history.backupStart()
+                    menuWorking.value = ""
+                }
+            },
+            onFiles = {
+                menuEngine.value = null
+                message.value = engine.id
+                scope.launch {
+                    val probe = engines.probe(engine.url)
+                    message.value = ""
+                    if (probe.ok) {
+                        engines.select(engine.id)
+                        onOpen(engine, probe, "files")
+                    } else {
+                        message.value = "Cannot reach ${engine.name}: " +
+                            probe.error.ifBlank { "not an engine" }
+                    }
+                }
+            },
+            onDismiss = { menuEngine.value = null },
+        )
     }
 }
 
@@ -315,6 +374,7 @@ internal fun EngineCard(
     engine: EngineEntry,
     busy: Boolean,
     onOpen: (String) -> Unit,
+    onMore: () -> Unit,
     readings: EngineReadings? = null,
 ) {
     val offline = !engine.online
@@ -417,9 +477,8 @@ internal fun EngineCard(
         Spacer(Modifier.height(Space.s2))
 
         // Band three — what you can do. Four peers, none filled: the same
-        // icon-above-label action the console draws. The first three open a
-        // pane; More is drawn like the console's unwired fourth verb and waits
-        // for the screen behind it.
+        // icon-above-label action the console draws. Three open a pane; More
+        // opens the sheet of everything a card has no room for.
         Box(Modifier.fillMaxWidth().height(1.dp).background(MaterialTheme.aixodia.line))
         Row(
             Modifier.fillMaxWidth().padding(top = Space.s3),
@@ -428,7 +487,7 @@ internal fun EngineCard(
             EngineAction(Icons.Default.Terminal, "Terminal", offline || busy) { onOpen("terminal") }
             EngineAction(Icons.Default.AutoAwesome, "AI", offline || busy) { onOpen("chat") }
             EngineAction(Icons.Default.Monitor, "Screen", offline || busy) { onOpen("screen") }
-            EngineAction(Icons.Default.MoreHoriz, "More", true) { }
+            EngineAction(Icons.Default.MoreHoriz, "More", offline || busy, onClick = onMore)
         }
     }
 }
