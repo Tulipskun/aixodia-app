@@ -52,6 +52,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.blur
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
@@ -149,6 +150,15 @@ fun EnginesScreen(
         }
     }
 
+    // While the buttons are up the list goes out of focus: the blur says "the
+    // page is not what you are touching", and the scrim under it takes the taps
+    // that miss a button.
+    Box(Modifier.fillMaxSize()) {
+    Box(
+        Modifier.fillMaxSize().then(
+            if (menuEngine.value != null) Modifier.blur(16.dp) else Modifier,
+        ),
+    ) {
     ModalNavigationDrawer(
         drawerState = drawer,
         drawerContent = {
@@ -277,13 +287,15 @@ fun EnginesScreen(
             }
         }
     }
+    }
 
-    // The second shelf of verbs. Every row acts on the engine whose More was
-    // pressed, which means selecting it first: the phone addresses one engine at
-    // a time through the address it stores, and a menu that asked engine B while
-    // the address said A would be asking the wrong machine.
+    // The three verbs a card has no room for, as buttons over the blurred list.
+    // Each one selects the engine whose More was pressed first: the phone
+    // addresses one engine at a time through the address it stores, and a button
+    // that asked engine B while the address said A would be asking the wrong
+    // machine.
     menuEngine.value?.let { engine ->
-        EngineMenu(
+        EngineActions(
             engine = engine,
             working = menuWorking.value,
             note = menuNote.value,
@@ -322,6 +334,7 @@ fun EnginesScreen(
             },
             onDismiss = { menuEngine.value = null },
         )
+    }
     }
 }
 
