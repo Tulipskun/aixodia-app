@@ -67,7 +67,11 @@ internal fun EngineActions(
         Box(
             Modifier
                 .fillMaxSize()
-                .background(Color.Black.copy(alpha = 0.45f))
+                // The page under this is nearly black, so a black scrim only makes
+                // the blur read as "the screen went dark". A thin white veil
+                // instead lifts the blurred shapes to where the eye can see them
+                // as shapes without any of the text being readable.
+                .background(Color.White.copy(alpha = 0.10f))
                 .clickable(
                     interactionSource = remember { MutableInteractionSource() },
                     indication = null,
