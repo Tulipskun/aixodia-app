@@ -156,7 +156,7 @@ fun EnginesScreen(
     Box(Modifier.fillMaxSize()) {
     Box(
         Modifier.fillMaxSize().then(
-            if (menuEngine.value != null) Modifier.blur(20.dp) else Modifier,
+            if (menuEngine.value != null) Modifier.blur(10.dp) else Modifier,
         ),
     ) {
     ModalNavigationDrawer(

@@ -13,7 +13,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CloudUpload
 import androidx.compose.material.icons.filled.Folder
@@ -83,9 +83,10 @@ internal fun EngineActions(
             verticalArrangement = Arrangement.Center,
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
-            Row(horizontalArrangement = Arrangement.spacedBy(Space.s4)) {
+            Row(horizontalArrangement = Arrangement.spacedBy(Space.s3)) {
                 FloatingAction(
                     icon = Icons.Default.SystemUpdateAlt,
+                    label = "Update",
                     description = "Update ${engine.name}",
                     busy = working == UPDATE,
                     enabled = idle,
@@ -93,6 +94,7 @@ internal fun EngineActions(
                 )
                 FloatingAction(
                     icon = Icons.Default.CloudUpload,
+                    label = "Back up",
                     description = "Back up ${engine.name}",
                     busy = working == BACKUP,
                     enabled = idle,
@@ -100,14 +102,14 @@ internal fun EngineActions(
                 )
                 FloatingAction(
                     icon = Icons.Default.Folder,
+                    label = "Files",
                     description = "Files on ${engine.name}",
                     busy = false,
                     enabled = idle,
                     onClick = onFiles,
                 )
             }
-            // Only the machine's name and the answer it gave: the buttons are
-            // icons, so this is the only place a result can be said.
+            // The machine's name, or the answer it just gave.
             Spacer(Modifier.height(Space.s4))
             Text(
                 if (note.isNotEmpty()) note else engine.name,
@@ -124,25 +126,36 @@ internal fun EngineActions(
     }
 }
 
-/** One round button, the size of a fingertip, with the page's hairline. */
+/**
+ * One tile: an icon over a word, in a rounded square.
+ *
+ * The shape and the word are what make three buttons a menu rather than three
+ * unnamed symbols: the verb is written on the thing that does it, the way a
+ * status bar's tiles do it. The corner radius is the cards' radius, one step
+ * tighter, so a tile reads as belonging to the same page.
+ */
 @Composable
 private fun FloatingAction(
     icon: ImageVector,
+    label: String,
     description: String,
     busy: Boolean,
     enabled: Boolean,
     onClick: () -> Unit,
 ) {
-    Box(
+    val ink = if (enabled) MaterialTheme.colorScheme.onSurface
+              else MaterialTheme.colorScheme.onSurfaceVariant
+    Column(
         Modifier
-            .size(56.dp)
-            // The page behind this is blurred and dimmed, so the buttons have to
-            // be lit: the highest surface step and the louder hairline, or three
-            // dark circles on a dark page read as nothing to press.
-            .background(MaterialTheme.colorScheme.surfaceContainerHighest, CircleShape)
-            .border(1.dp, MaterialTheme.aixodia.lineStrong, CircleShape)
+            .size(width = 88.dp, height = 72.dp)
+            // The page behind this is blurred, so a tile has to be lit: the
+            // highest surface step and the louder hairline, or dark squares on a
+            // dark page read as nothing to press.
+            .background(MaterialTheme.colorScheme.surfaceContainerHighest, TileShape)
+            .border(1.dp, MaterialTheme.aixodia.lineStrong, TileShape)
             .clickable(enabled = enabled, onClickLabel = description, onClick = onClick),
-        contentAlignment = Alignment.Center,
+        verticalArrangement = Arrangement.Center,
+        horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         if (busy) {
             CircularProgressIndicator(
@@ -153,11 +166,22 @@ private fun FloatingAction(
         } else {
             Icon(
                 icon,
-                contentDescription = description,
-                modifier = Modifier.size(22.dp),
+                contentDescription = null,
+                modifier = Modifier.size(20.dp),
                 tint = if (enabled) MaterialTheme.colorScheme.primary
                        else MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
+        Spacer(Modifier.height(Space.s1))
+        Text(
+            label,
+            style = MaterialTheme.typography.labelMedium,
+            color = ink,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
     }
 }
+
+/** A tile's corners: the cards' radius, one step tighter. */
+private val TileShape = RoundedCornerShape(12.dp)
