@@ -52,6 +52,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -68,6 +69,10 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.delay
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.repeatOnLifecycle
@@ -170,6 +175,10 @@ fun EnginesScreen(
     // What each card's strip draws. The windows belong to the app, not to this
     // screen: leaving the list for a thread and coming back must not empty them.
     val windows by readings.byEngine.collectAsState()
+    // What the phone itself last measured about each machine. Absent until the
+    // first answer arrives, which is when the registry's lease stops being the
+    // word.
+    val live = remember { mutableStateMapOf<String, Boolean>() }
 
     suspend fun reload() {
         loading.value = true
@@ -181,28 +190,45 @@ fun EnginesScreen(
 
     // The graphs are sampled on a timer of their own. The list is only fetched
     // when somebody asks (opening the screen, pulling refresh), but a graph is
-    // history: one reading is a number, not a line. Only engines the gateway
-    // reports up are asked, so a card whose light is off does not spend every
-    // sample waiting out a timeout, and the timer only runs while the screen is
-    // the one being looked at: a phone in a pocket has no cards to keep current.
-    // A card is not the only thing that changes under this blur: the graphs are
-    // sampled every two seconds, and every sample re-renders the layer the blur
-    // is applied to — which on this phone means the whole page visibly re-blurs
-    // every two seconds. So the timer stands down while the menu is up. What is
-    // behind the blur is being decided about, not watched, and it is sampled
-    // again the moment the menu closes.
+    // history: one reading is a number, not a line.
+    //
+    // The same sample decides the card's light. The registry's `online` is a
+    // lease read once, at fetch time: it is up to a minute old on arrival and
+    // frozen afterwards, so a machine that died a second later was drawn as up
+    // for as long as the screen stayed open. Two sources of truth where one is
+    // stale is exactly a light that lies, so a card's word is only ever the
+    // phone's own last answer, and the registry's lease is the word until the
+    // first answer arrives (right after the fetch, when the lease is still
+    // fresh).
+    //
+    // A card is not the only thing that changes under this blur: every sample
+    // re-renders the layer the blur is applied to — which on this phone means
+    // the whole page visibly re-blurs every two seconds. So the timer stands
+    // down while the menu is up. What is behind the blur is being decided about,
+    // not watched, and it is sampled again the moment the menu closes.
     val lifecycle = LocalLifecycleOwner.current
     LaunchedEffect(engines, snapshot.value.engines, menuOpen.targetState) {
         val listed = snapshot.value.engines
         if (listed.isEmpty()) return@LaunchedEffect
         if (menuOpen.targetState) return@LaunchedEffect
+        val plan = ProbePlan()
+        var tick = 0
         lifecycle.repeatOnLifecycle(Lifecycle.State.RESUMED) {
             while (true) {
-                for (engine in listed) {
-                    if (!engine.online) continue
-                    val health = engines.health(engine.url) ?: continue
-                    readings.record(engine.id, health)
+                // Asked together: one dead engine must not hold the others'
+                // numbers back for the length of its own timeout.
+                val due = listed.filter { plan.due(it.id, live[it.id], tick) }
+                coroutineScope {
+                    due.map { engine ->
+                        async {
+                            val health = engines.health(engine.url)
+                            live[engine.id] = health != null
+                            if (health != null) readings.record(engine.id, health)
+                        }
+                    }.awaitAll()
                 }
+                plan.forget(listed.map { it.id })
+                tick++
                 delay(HEALTH_MS)
             }
         }
@@ -320,6 +346,7 @@ fun EnginesScreen(
                 items(snapshot.value.engines, key = { it.id }) { engine ->
                     EngineCard(
                         engine = engine,
+                        online = live[engine.id] ?: engine.online,
                         busy = message.value == engine.id,
                         readings = windows[engine.id],
                         onOpen = { pane ->
@@ -453,20 +480,32 @@ fun EnginesScreen(
     }
 
     // Deleting is the one irreversible verb in this screen, so it is asked about
-    // in words, with the machine's name in them, and with what it does *not* do:
-    // the row goes, the machine is untouched, and it registers itself again the
-    // next time it starts.
+    // in words, with the machine's name in them, and with what it does: the row,
+    // the hostname and the tunnel. The wait is said here too, because the gateway
+    // refuses a machine that has only been quiet for a while and a reader who
+    // does not know why would try again and again.
     deleteEngine.value?.let { engine ->
         AlertDialog(
             onDismissRequest = { deleteEngine.value = null },
             title = { Text("Delete ${engine.displayName}?") },
             text = {
-                Text(
-                    "It is removed from the engine list for every client. The machine itself is " +
-                        "not touched, and an engine that starts again registers itself once more.",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
+                Column {
+                    Text(
+                        "It is removed from the engine list for every client, and its address " +
+                            "is taken down with it: the DNS record, the tunnel and the keys that " +
+                            "made it reachable. The machine itself is not touched, and an engine " +
+                            "that starts again makes a fresh address for itself.",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    Spacer(Modifier.height(Space.s2))
+                    Text(
+                        "A machine that is only asleep cannot be deleted: its address is kept " +
+                            "until it has been silent for a day.",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
             },
             confirmButton = {
                 TextButton(
@@ -551,12 +590,13 @@ internal fun DrawerNavRow(
 @Composable
 internal fun EngineCard(
     engine: EngineEntry,
+    online: Boolean,
     busy: Boolean,
     onOpen: (Place) -> Unit,
     onMore: () -> Unit,
     readings: EngineReadings? = null,
 ) {
-    val offline = !engine.online
+    val offline = !online
     Column(
         Modifier
             .fillMaxWidth()
@@ -593,8 +633,13 @@ internal fun EngineCard(
                 )
                 Spacer(Modifier.size(Space.s2))
                 Text(
+                    // The word is the state, always: a subtitle that says "up 12h"
+                    // beside a red dot is two answers in one row, and the one a
+                    // reader believes is the words.
                     if (busy) "checking…"
-                    else engine.subtitle.ifBlank { if (offline) "offline" else "online" },
+                    else if (offline) "offline"
+                    else if (engine.subtitle.isNotBlank()) "online · ${engine.subtitle}"
+                    else "online",
                     style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     fontFamily = FontFamily.Monospace,

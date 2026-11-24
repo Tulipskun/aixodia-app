@@ -15,9 +15,46 @@ import org.junit.Test
 class EngineAdminTest {
     @Test
     fun a_deleted_engine_names_the_row_that_went() {
-        val answer = EngineDeleteAnswer.parse("""{"ok":true,"deleted":"m-900e51e3","name":"Old box"}""", 200)
-        assertEquals(EngineDeleteAnswer.Deleted("m-900e51e3"), answer)
-        assertEquals("Deleted m-900e51e3", answer.headline())
+        val answer = EngineDeleteAnswer.parse(
+            """{"ok":true,"deleted":"m-900e51e3","name":"Old box","url_removed":true,
+                "steps":{"dns":"removed 1","tunnel":"removed 1","keys":"removed 3"}}""",
+            200,
+        )
+        answer as EngineDeleteAnswer.Deleted
+        assertEquals("m-900e51e3", answer.id)
+        assertTrue("the address went with it", answer.urlRemoved)
+        assertEquals("Deleted m-900e51e3, and its address", answer.headline())
+    }
+
+    @Test
+    fun a_delete_that_left_part_of_the_address_says_which_part() {
+        // The row is gone, so there is nothing left to delete it with: the only
+        // useful answer is the part that is still standing.
+        val answer = EngineDeleteAnswer.parse(
+            """{"ok":true,"deleted":"work-1","name":"Work","url_removed":false,
+                "steps":{"dns":"removed 1","tunnel":"failed: tunnel is in use",
+                          "keys":"removed 3"}}""",
+            200,
+        )
+        answer as EngineDeleteAnswer.Deleted
+        assertFalse(answer.urlRemoved)
+        val headline = answer.headline()
+        assertTrue("the row went", headline.startsWith("Deleted work-1"))
+        assertTrue(headline, headline.contains("tunnel is in use"))
+        assertFalse("the parts that worked are not called failures", headline.contains("dns"))
+    }
+
+    @Test
+    fun a_machine_that_was_only_asleep_is_refused_with_a_reason_to_read() {
+        val answer = EngineDeleteAnswer.parse(
+            """{"error":"Work was last seen 10 min, so its address is kept: an engine may be """ +
+                """deleted once it has been silent for 24 h","code":"ENGINE_TOO_RECENT",""" +
+                """"silent_seconds":600,"wait_seconds":85800}""",
+            409,
+        )
+        val refused = answer as EngineDeleteAnswer.Refused
+        assertFalse("asleep is not live", refused.online)
+        assertTrue(refused.headline().contains("last seen 10 min"))
     }
 
     @Test

@@ -10,21 +10,43 @@ import org.json.JSONObject
  *
  * * [Deleted] — the row is gone. Every client reads the same table, so the
  *   engine is gone from the console's switcher and from every phone at once.
- * * [Refused] — the gateway would not, and said why. The one that matters is a
- *   live lease: an engine still beating rewrites its own row every twenty
- *   seconds, so a delete it allowed would be undone while the reader was told it
- *   had worked.
+ *   [urlRemoved] says whether the machine's public address went with it: the
+ *   hostname, the tunnel and the keys that made it reachable. A delete that
+ *   leaves part of an address standing is still a delete, and the parts that
+ *   stood are named rather than hidden.
+ * * [Refused] — the gateway would not, and said why. Two of those matter: a live
+ *   lease (the engine would rewrite its own row within a beat), and a machine
+ *   that has only been quiet for a while — its address is kept, because a
+ *   sleeping machine is not a gone one.
  * * [Failed] — nothing was answered, or the answer was not this shape. Never
  *   read as a success: a delete that did not happen must not look like one.
  */
 sealed interface EngineDeleteAnswer {
-    data class Deleted(val id: String) : EngineDeleteAnswer
+    data class Deleted(
+        val id: String,
+        val urlRemoved: Boolean = false,
+        /**
+         * What happened to each part of the address, as the gateway reports it:
+         * `dns`, `tunnel`, `keys` → `removed 1` / `none` / `failed: why`.
+         */
+        val steps: Map<String, String> = emptyMap(),
+    ) : EngineDeleteAnswer
+
     data class Refused(val reason: String, val online: Boolean = false) : EngineDeleteAnswer
     data class Failed(val reason: String) : EngineDeleteAnswer
 
     /** One line under the tiles. */
     fun headline(): String = when (this) {
-        is Deleted -> "Deleted $id"
+        is Deleted -> when {
+            urlRemoved -> "Deleted $id, and its address"
+            // Everything that did not finish is named: a half teardown is a state
+            // somebody has to act on, not a footnote.
+            steps.values.any { it.startsWith("failed") } ->
+                "Deleted $id, address partly standing: " + steps.entries
+                    .filter { it.value.startsWith("failed") }
+                    .joinToString("; ") { "${it.key} ${it.value.removePrefix("failed: ")}" }
+            else -> "Deleted $id"
+        }
         is Refused -> reason
         is Failed -> "Cannot delete: $reason"
     }
@@ -35,7 +57,11 @@ sealed interface EngineDeleteAnswer {
                 ?: return Failed(if (body.isBlank()) "HTTP $status with no body" else body.take(120))
             if (obj.optBoolean("ok", false)) {
                 val id = obj.optString("deleted")
-                return if (id.isBlank()) Failed("the gateway confirmed nothing") else Deleted(id)
+                if (id.isBlank()) return Failed("the gateway confirmed nothing")
+                val steps = obj.optJSONObject("steps")?.let { json ->
+                    json.keys().asSequence().associateWith { key -> json.optString(key) }
+                }.orEmpty()
+                return Deleted(id, urlRemoved = obj.optBoolean("url_removed", false), steps = steps)
             }
             val reason = obj.optString("error").ifBlank { "the gateway refused (HTTP $status)" }
             val code = obj.optString("code")

@@ -35,15 +35,26 @@ class EngineCardSnapshots {
         online = false,
         version = "",
     )
-
     @Test
     fun engineCardOnline() = paparazzi.snapshot {
-        AIxodiaTheme { EngineCard(engine = online, busy = false, onOpen = {}, onMore = {}) }
+        AIxodiaTheme { EngineCard(engine = online, online = true, busy = false, onOpen = {}, onMore = {}) }
     }
 
     @Test
     fun engineCardOffline() = paparazzi.snapshot {
-        AIxodiaTheme { EngineCard(engine = offline, busy = false, onOpen = {}, onMore = {}) }
+        AIxodiaTheme { EngineCard(engine = offline, online = false, busy = false, onOpen = {}, onMore = {}) }
+    }
+
+    /**
+     * The state that used to lie: the registry listed the machine as up when the
+     * list was fetched, and the phone's own probe has since found it gone. The
+     * card draws what was measured, not what was read once.
+     */
+    @Test
+    fun engineCardDownAfterBeingListedUp() = paparazzi.snapshot {
+        AIxodiaTheme {
+            EngineCard(engine = online, online = false, busy = false, onOpen = {}, onMore = {})
+        }
     }
 
     /**
@@ -58,6 +69,7 @@ class EngineCardSnapshots {
         AIxodiaTheme {
             EngineCard(
                 engine = online,
+                online = true,
                 busy = false,
                 onOpen = {},
                 onMore = {},
