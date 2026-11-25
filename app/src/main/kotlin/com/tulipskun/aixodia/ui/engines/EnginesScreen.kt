@@ -16,6 +16,9 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.asPaddingValues
+import androidx.compose.foundation.layout.navigationBars
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -300,7 +303,12 @@ fun EnginesScreen(
                 Modifier.fillMaxSize().padding(pad).padding(horizontal = Space.s3),
                 verticalArrangement = Arrangement.spacedBy(Space.s3),
                 contentPadding = androidx.compose.foundation.layout.PaddingValues(
-                    top = Space.s2, bottom = Space.s4,
+                    top = Space.s2,
+                    // The system's own bar is not ours to draw under: the last card's
+                    // More button was sitting inside the gesture area, where a tap is
+                    // the system's, not the card's. The list ends where the bar begins.
+                    bottom = Space.s4 + WindowInsets.navigationBars
+                        .asPaddingValues().calculateBottomPadding(),
                 ),
             ) {
                 item(key = "screen-head") {
