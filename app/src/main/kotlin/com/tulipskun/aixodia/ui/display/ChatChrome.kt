@@ -733,8 +733,9 @@ private fun AttachOption(icon: androidx.compose.ui.graphics.vector.ImageVector, 
 fun ConsoleBar(
     onMenu: () -> Unit,
     menuLabel: String,
-    onRefresh: () -> Unit,
-    refreshLabel: String,
+    onAction: () -> Unit,
+    actionLabel: String,
+    actionIcon: ImageVector = Icons.Default.Refresh,
 ) {
     Row(
         Modifier
@@ -768,7 +769,7 @@ fun ConsoleBar(
                 color = MaterialTheme.colorScheme.onSurface,
             )
         }
-        BarButton(Icons.Default.Refresh, refreshLabel, onRefresh)
+        BarButton(actionIcon, actionLabel, onAction)
     }
 }
 

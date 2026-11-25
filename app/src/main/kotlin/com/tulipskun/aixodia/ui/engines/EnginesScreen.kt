@@ -29,6 +29,8 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Devices
+import androidx.compose.material.icons.filled.Key
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Memory
 import androidx.compose.material.icons.filled.MoreHoriz
 import androidx.compose.material.icons.filled.Monitor
@@ -130,6 +132,7 @@ fun EnginesScreen(
     onOpen: (EngineEntry, EngineDirectory.Probe, Place) -> Unit,
     onOpenSettings: () -> Unit,
     onOpenDroidime: () -> Unit,
+    onOpenProviders: () -> Unit,
 ) {
     val scope = rememberCoroutineScope()
     val drawer = rememberDrawerState(DrawerValue.Closed)
@@ -278,6 +281,14 @@ fun EnginesScreen(
                         current = false,
                         onClick = { scope.launch { drawer.close() }; onOpenDroidime() },
                     )
+                    // The same controls the chat's drawer carries, at the same
+                    // depth: a key that ran out is repaired from either screen.
+                    DrawerNavRow(
+                        icon = Icons.Default.Key,
+                        label = "Providers",
+                        current = false,
+                        onClick = { scope.launch { drawer.close() }; onOpenProviders() },
+                    )
                     Spacer(Modifier.weight(1f))
                     Box(
                         Modifier.fillMaxWidth().height(1.dp)
@@ -302,8 +313,9 @@ fun EnginesScreen(
                 ConsoleBar(
                     onMenu = { scope.launch { drawer.open() } },
                     menuLabel = "Engine menu",
-                    onRefresh = { scope.launch { reload() } },
-                    refreshLabel = "Refresh engine list",
+                    onAction = { scope.launch { reload() } },
+                    actionLabel = "Refresh engine list",
+                    actionIcon = Icons.Default.Refresh,
                 )
             },
         ) { pad ->
@@ -714,7 +726,7 @@ internal fun EngineCard(
             horizontalArrangement = Arrangement.spacedBy(Space.s2),
         ) {
             EngineAction(Icons.Default.Terminal, "Terminal", offline || busy) { onOpen(Place.Terminal) }
-            EngineAction(Icons.Default.AutoAwesome, "AI", offline || busy) { onOpen(Place.Chat) }
+            EngineAction(Icons.Default.AutoAwesome, "Chat", offline || busy) { onOpen(Place.Chat) }
             EngineAction(Icons.Default.Monitor, "Screen", offline || busy) { onOpen(Place.Screen) }
             // More stays reachable when the machine is not: a dead engine is the
             // one a person most needs to rename or to delete, and both of those

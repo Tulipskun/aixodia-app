@@ -19,6 +19,7 @@ import com.tulipskun.aixodia.ui.droidime.DroidimeScreen
 import com.tulipskun.aixodia.ui.engines.EnginesScreen
 import com.tulipskun.aixodia.ui.nav.Nav
 import com.tulipskun.aixodia.ui.nav.Place
+import com.tulipskun.aixodia.ui.providers.ProvidersScreen
 import com.tulipskun.aixodia.ui.theme.AIxodiaTheme
 import kotlinx.coroutines.launch
 
@@ -64,14 +65,24 @@ class MainActivity : ComponentActivity() {
                             onOpen = { _, _, place -> nav.open(place) },
                             onOpenSettings = { nav.open(Place.Settings) },
                             onOpenDroidime = { nav.open(Place.Droidime) },
+                            onOpenProviders = { nav.open(Place.Providers) },
                         )
                         // The phones DroidIME runs on. A place of its own, so back
                         // from it lands on the engines and the drawer says which of
                         // the two is showing — the console's own two menu entries.
+                        // The machine's own controls are places at this level, not
+                        // corners of one chat: providers and settings were reachable
+                        // from two different drawers at two different depths, and the
+                        // list a reader lands on first had no way to the keys at all.
+                        Place.Providers -> ProvidersScreen(
+                            history = c.historyApi,
+                            onBack = { nav.back() },
+                        )
                         Place.Droidime -> DroidimeScreen(
                             devices = c.devices,
                             onOpenEngines = { nav.backTo(Place.Engines) },
                             onOpenSettings = { nav.open(Place.Settings) },
+                            onOpenProviders = { nav.open(Place.Providers) },
                         )
                         // Every other place is a pane of one engine, and the
                         // chat screen is the host of them: it owns the sockets

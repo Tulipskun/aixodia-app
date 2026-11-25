@@ -113,10 +113,12 @@
     <string name="compact_marker">Context trimmed — kept %1$d turns, dropped %2$d</string>
 
     <!-- Chat screen. -->
-    <string name="push_now_title">Push now?</string>
-    <string name="push_now_body">Signals the daemon to end this session: it backs up and starts the next one. Confirm?</string>
-    <string name="push_now_requested">Push now requested</string>
-    <string name="push_now_failed">Push now failed</string>
+    <string name="restart_session">Restart session</string>
+    <string name="push_now_title">Restart this session?</string>
+    <string name="push_now_body">The engine backs up this session and starts the next one. Confirm?</string>
+    <string name="push_now_requested">Restart requested</string>
+    <string name="push_now_failed">Restart failed</string>
+    <string name="engines">Engines</string>
 
     <!-- Backup: the engine's own tree, onto a Hugging Face bucket. The phone
          only asks for it; the token it stores never comes back whole. -->

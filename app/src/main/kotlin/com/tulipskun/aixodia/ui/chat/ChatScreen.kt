@@ -43,9 +43,11 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Devices
 import androidx.compose.material.icons.filled.Key
 import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.RestartAlt
 import androidx.compose.material.icons.filled.Send
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Stop
@@ -151,7 +153,6 @@ import com.tulipskun.aixodia.ui.sessions.DeleteChatDialog
 import com.tulipskun.aixodia.ui.sessions.RenameChatDialog
 import com.tulipskun.aixodia.ui.sessions.SessionDrawerContent
 import com.tulipskun.aixodia.ui.sessions.sessionTitle
-import com.tulipskun.aixodia.ui.providers.ProvidersScreen
 import com.tulipskun.aixodia.ui.settings.BackupScreen
 import com.tulipskun.aixodia.ui.settings.SettingsScreen
 import com.tulipskun.aixodia.ui.files.FilesScreen
@@ -438,10 +439,6 @@ fun ChatScreen(
         )
         return
     }
-    if (nav.current == Place.Providers) {
-        ProvidersScreen(history = history, onBack = { nav.back() })
-        return
-    }
 
     // Two system pickers behind one "+": the photo picker for images and video,
     // the document picker for anything else. Both take a whole selection, so a
@@ -527,7 +524,7 @@ fun ChatScreen(
         // blind from a dropdown and leave the answer on a line of chat text.
         ComposerCommand(stringResource(R.string.backup_and_restore)) { nav.open(Place.Backup) },
         ComposerCommand(stringResource(R.string.settings)) { nav.open(Place.Settings) },
-        ComposerCommand("Engines") { nav.home() },
+        ComposerCommand(stringResource(R.string.engines)) { nav.home() },
     )
     // The header counts from a clock the engine set once, so the number has to
     // advance on the phone: a one-second tick is enough for a "2h 15m" readout.
@@ -779,6 +776,32 @@ fun ChatScreen(
                         // ran out of keys could not be re-keyed from the phone
                         // at all, because every other path to that screen was
                         // dead code.
+                        // The drawer says where the reader can go in the rest of
+                        // the app, not only which chats exist: leaving the chat for
+                        // the engine list was the back button's job alone, and a
+                        // drawer with no way home is a room with one door.
+                        Row(
+                            Modifier
+                                .fillMaxWidth()
+                                .clickable {
+                                    scope.launch { drawer.close() }
+                                    nav.home()
+                                }
+                                .padding(horizontal = 16.dp, vertical = 10.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Icon(
+                                Icons.Default.Devices,
+                                contentDescription = null,
+                                modifier = Modifier.size(18.dp),
+                                tint = MaterialTheme.colorScheme.primary,
+                            )
+                            Text(
+                                stringResource(R.string.engines),
+                                modifier = Modifier.padding(start = 10.dp),
+                                style = MaterialTheme.typography.labelLarge,
+                            )
+                        }
                         Row(
                             Modifier
                                 .fillMaxWidth()
@@ -824,8 +847,13 @@ fun ChatScreen(
                 ConsoleBar(
                     onMenu = { scope.launch { drawer.open() } },
                     menuLabel = stringResource(R.string.menu),
-                    onRefresh = { showPushNowDialog = true },
-                    refreshLabel = stringResource(R.string.push_now_title),
+                    // The bar's right-hand control ends the session and starts
+                    // the next one. It used to wear a refresh arrow and the word
+                    // "Push now", so the picture, the label and the act were
+                    // three different things.
+                    onAction = { showPushNowDialog = true },
+                    actionLabel = stringResource(R.string.restart_session),
+                    actionIcon = Icons.Default.RestartAlt,
                 )
             },
             bottomBar = {

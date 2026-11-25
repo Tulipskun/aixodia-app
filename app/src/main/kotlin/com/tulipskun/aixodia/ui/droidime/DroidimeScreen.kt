@@ -26,7 +26,9 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.BatteryFull
 import androidx.compose.material.icons.filled.Devices
+import androidx.compose.material.icons.filled.Key
 import androidx.compose.material.icons.filled.Memory
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Mouse
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Smartphone
@@ -94,6 +96,7 @@ fun DroidimeScreen(
     devices: DeviceDirectory,
     onOpenEngines: () -> Unit,
     onOpenSettings: () -> Unit,
+    onOpenProviders: () -> Unit,
 ) {
     val scope = rememberCoroutineScope()
     val drawer = rememberDrawerState(DrawerValue.Closed)
@@ -157,6 +160,12 @@ fun DroidimeScreen(
                     )
                     Spacer(Modifier.weight(1f))
                     DrawerNavRow(
+                        icon = Icons.Default.Key,
+                        label = "Providers",
+                        current = false,
+                        onClick = { scope.launch { drawer.close() }; onOpenProviders() },
+                    )
+                    DrawerNavRow(
                         icon = Icons.Default.Settings,
                         label = "Settings",
                         current = false,
@@ -173,8 +182,9 @@ fun DroidimeScreen(
                 ConsoleBar(
                     onMenu = { scope.launch { drawer.open() } },
                     menuLabel = "Device menu",
-                    onRefresh = { scope.launch { reload() } },
-                    refreshLabel = "Refresh device list",
+                    onAction = { scope.launch { reload() } },
+                    actionLabel = "Refresh device list",
+                    actionIcon = Icons.Default.Refresh,
                 )
             },
         ) { pad ->
