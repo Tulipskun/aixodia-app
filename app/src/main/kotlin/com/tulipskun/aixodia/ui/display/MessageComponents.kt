@@ -1365,20 +1365,13 @@ private fun GoalsSection(
  *
  * The engine places this list at the head of every request for the whole chat
  * rather than re-writing it round by round, so an item keeps its place after it
- * is done or dropped and the reader sees the same text the model does. It is
- * drawn like any other message: no card, no fold, nothing to open.
+ * is done or dropped and the reader sees the same text the model does.
+ *
+ * Nothing is cut out of it: the message is the reminder exactly as it was sent,
+ * head and tail markers included, so what the reader sees is what the model was
+ * given and not a summary of it.
  */
-internal fun noteText(text: String): String {
-    val lines = text.lineSequence()
-        .map { it.trimEnd() }
-        .filter { line ->
-            val t = line.trim()
-            t.startsWith("- [") || t == "Goals:" || t == "Plans:"
-        }
-        .toList()
-    if (lines.isEmpty()) return ""
-    return (listOf("**Goals & plans**") + lines).joinToString("\n")
-}
+internal fun noteText(text: String): String = text.trim()
 
 /**
  * The engine trimmed the prompt to make this request fit: whole older turns

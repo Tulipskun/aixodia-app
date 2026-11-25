@@ -4,9 +4,9 @@ import org.junit.Assert.assertEquals
 import org.junit.Test
 
 /**
- * The goals and plans note is a plain message in the thread. It must keep every
- * item — a finished goal is marked, not removed — and must not repeat the
- * instructions that are meant for the model alone.
+ * The goals and plans note is a plain message in the thread, and it is the
+ * reminder exactly as the engine sent it: nothing is filtered, shortened or
+ * summarised on the way to the reader.
  */
 class GoalsNoteTest {
 
@@ -25,31 +25,21 @@ class GoalsNoteTest {
     """.trimIndent()
 
     @Test
+    fun the_message_is_the_reminder_whole() {
+        assertEquals(reminder, noteText(reminder))
+    }
+
+    @Test
     fun every_item_is_kept_with_its_status() {
-        assertEquals(
-            listOf(
-                "**Goals & plans**",
-                "Goals:",
-                "- [g1] open · ship the release",
-                "- [g2] done · fix the installer",
-                "- [g3] dropped · rewrite the web console",
-                "Plans:",
-                "- [p1] open · write tests",
-            ).joinToString("\n"),
-            noteText(reminder),
-        )
-    }
-
-    @Test
-    fun the_instructions_to_the_model_are_not_drawn() {
         val note = noteText(reminder)
-        assertEquals(false, note.contains("Keep them in mind"))
-        assertEquals(false, note.contains("system-remind"))
+        assertEquals(true, note.contains("- [g1] open · ship the release"))
+        assertEquals(true, note.contains("- [g2] done · fix the installer"))
+        assertEquals(true, note.contains("- [g3] dropped · rewrite the web console"))
+        assertEquals(true, note.contains("- [p1] open · write tests"))
     }
 
     @Test
-    fun a_reminder_with_no_items_draws_nothing() {
-        assertEquals("", noteText("<system-remind>\nNo goals yet.\n</system-remind>"))
-        assertEquals("", noteText(""))
+    fun an_empty_reminder_draws_nothing() {
+        assertEquals("", noteText("   \n "))
     }
 }
