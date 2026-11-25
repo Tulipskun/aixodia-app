@@ -5,6 +5,7 @@ import com.tulipskun.aixodia.data.local.AppDatabase
 import com.tulipskun.aixodia.data.remote.ChatTransport
 import com.tulipskun.aixodia.data.remote.ClientToken
 import com.tulipskun.aixodia.data.remote.DaemonDiscovery
+import com.tulipskun.aixodia.data.remote.DeviceDirectory
 import com.tulipskun.aixodia.data.remote.EngineDirectory
 import com.tulipskun.aixodia.data.remote.HistoryApi
 import com.tulipskun.aixodia.data.remote.RunSocket
@@ -58,6 +59,8 @@ class AppContainer(app: Application) {
     val repo = ChatRepository(db, historyApi, chat)
     val discovery = DaemonDiscovery(settings, historyApi, chat, scope)
     val engines = EngineDirectory(settings)
+    // The phones DroidIME runs on: a list of its own, read from a route of its own.
+    val devices = DeviceDirectory(settings)
     // The windows behind the cards' charts. Loaded from disk once, so a restart
     // opens on the same strips instead of an empty one that fills in from now.
     val readings = EngineReadingsStore(settings)

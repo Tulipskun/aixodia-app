@@ -15,6 +15,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
 import androidx.lifecycle.lifecycleScope
 import com.tulipskun.aixodia.ui.chat.ChatScreen
+import com.tulipskun.aixodia.ui.droidime.DroidimeScreen
 import com.tulipskun.aixodia.ui.engines.EnginesScreen
 import com.tulipskun.aixodia.ui.nav.Nav
 import com.tulipskun.aixodia.ui.nav.Place
@@ -61,6 +62,15 @@ class MainActivity : ComponentActivity() {
                             readings = c.readings,
                             history = c.historyApi,
                             onOpen = { _, _, place -> nav.open(place) },
+                            onOpenSettings = { nav.open(Place.Settings) },
+                            onOpenDroidime = { nav.open(Place.Droidime) },
+                        )
+                        // The phones DroidIME runs on. A place of its own, so back
+                        // from it lands on the engines and the drawer says which of
+                        // the two is showing — the console's own two menu entries.
+                        Place.Droidime -> DroidimeScreen(
+                            devices = c.devices,
+                            onOpenEngines = { nav.backTo(Place.Engines) },
                             onOpenSettings = { nav.open(Place.Settings) },
                         )
                         // Every other place is a pane of one engine, and the

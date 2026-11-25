@@ -15,6 +15,17 @@ enum class Place {
     /** The home screen: the engines the gateway knows about. */
     Engines,
 
+    /**
+     * The phones DroidIME runs on.
+     *
+     * A section of its own rather than a filter on the engine list, because a
+     * device is not a machine of ours: it has no shells, no desktop and no
+     * readings to chart, and its card offers two verbs rather than four. The web
+     * console separates them at the same place — one menu entry each — and the
+     * two screens must not disagree about what a phone is.
+     */
+    Droidime,
+
     /** One engine's chat: the pane a card's AI action opens. */
     Chat,
 

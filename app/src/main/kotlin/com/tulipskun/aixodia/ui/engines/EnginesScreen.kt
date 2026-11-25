@@ -33,6 +33,7 @@ import androidx.compose.material.icons.filled.Memory
 import androidx.compose.material.icons.filled.MoreHoriz
 import androidx.compose.material.icons.filled.Monitor
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.Smartphone
 import androidx.compose.material.icons.filled.SdStorage
 import androidx.compose.material.icons.filled.Storage
 import androidx.compose.material.icons.filled.Terminal
@@ -128,6 +129,7 @@ fun EnginesScreen(
     history: HistoryApi,
     onOpen: (EngineEntry, EngineDirectory.Probe, Place) -> Unit,
     onOpenSettings: () -> Unit,
+    onOpenDroidime: () -> Unit,
 ) {
     val scope = rememberCoroutineScope()
     val drawer = rememberDrawerState(DrawerValue.Closed)
@@ -269,6 +271,12 @@ fun EnginesScreen(
                         label = "Engines",
                         current = true,
                         onClick = { scope.launch { drawer.close() } },
+                    )
+                    DrawerNavRow(
+                        icon = Icons.Default.Smartphone,
+                        label = "Droidime",
+                        current = false,
+                        onClick = { scope.launch { drawer.close() }; onOpenDroidime() },
                     )
                     Spacer(Modifier.weight(1f))
                     Box(
@@ -724,7 +732,7 @@ internal fun EngineCard(
  * chart only says how the machine has been behaving.
  */
 @Composable
-private fun RowScope.MetricCell(
+internal fun RowScope.MetricCell(
     label: String,
     icon: ImageVector,
     series: List<Double>,

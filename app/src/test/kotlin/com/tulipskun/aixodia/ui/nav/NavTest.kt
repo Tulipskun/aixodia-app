@@ -101,7 +101,30 @@ class NavTest {
     }
 
     @Test
-    fun a_history_survives_a_rotation() {
+    fun the_devices_are_a_place_of_their_own_and_back_returns_to_the_engines() {
+        // Droidime is a section, not a filter: it is opened from the drawer, it is
+        // not the home, and back from it is the engines list rather than the app
+        // closing.
+        val nav = Nav()
+        nav.open(Place.Droidime)
+        assertEquals(Place.Droidime, nav.current)
+        assertEquals(Place.Engines, nav.places.first())
+        assertTrue(nav.canGoBack)
+        assertTrue(nav.back())
+        assertEquals(Place.Engines, nav.current)
+    }
+
+    @Test
+    fun settings_opened_from_the_devices_returns_to_the_devices() {
+        val nav = Nav()
+        nav.open(Place.Droidime)
+        nav.open(Place.Settings)
+        assertTrue(nav.back())
+        assertEquals(Place.Droidime, nav.current)
+    }
+
+    @Test
+    fun a_saved_history_survives_a_rotation() {
         val nav = Nav()
         nav.open(Place.Chat)
         nav.open(Place.Screen)

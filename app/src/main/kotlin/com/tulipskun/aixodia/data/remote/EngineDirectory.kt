@@ -22,12 +22,7 @@ import java.util.concurrent.TimeUnit
  */
 class EngineDirectory(
     private val settings: SettingsStore,
-    private val client: OkHttpClient = OkHttpClient.Builder()
-        .dns(ReachableDns)
-        .connectTimeout(10, TimeUnit.SECONDS)
-        .readTimeout(10, TimeUnit.SECONDS)
-        .callTimeout(15, TimeUnit.SECONDS)
-        .build(),
+    private val client: OkHttpClient = client(),
     private val clientToken: ClientToken = ClientToken.shared,
 ) {
     /** The engines as last stored, without asking anyone. */
@@ -223,6 +218,22 @@ class EngineDirectory(
      * A registry write goes to the host part of the address the phone already
      * has, exactly like the list read: one address, one Worker, one table.
      */
+    companion object {
+        /**
+         * The one HTTP client the gateway's lists are read with.
+         *
+         * Shared with the device list rather than built twice: both ask the same
+         * host, and a dialler that resolved one name differently from the other
+         * would be two opinions about one address.
+         */
+        fun client(): OkHttpClient = OkHttpClient.Builder()
+            .dns(ReachableDns)
+            .connectTimeout(10, TimeUnit.SECONDS)
+            .readTimeout(10, TimeUnit.SECONDS)
+            .callTimeout(15, TimeUnit.SECONDS)
+            .build()
+    }
+
     private suspend fun writeTarget(): Pair<String, String>? {
         val base = EngineCatalog.registryUrl(settings.current().daemonUrl) ?: return null
         val token = runCatching { clientToken.get(settings.current(), settings) }.getOrDefault("")
