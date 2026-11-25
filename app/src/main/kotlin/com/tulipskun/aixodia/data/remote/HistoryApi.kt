@@ -716,7 +716,10 @@ class HistoryApi(
                     EngineUpdateAnswer.parse(body, r.code)
                 }
             }
-        }.getOrElse { EngineUpdateAnswer.Failed(it.message ?: "no reply") }
+        }.getOrElse {
+            android.util.Log.w("Engine", "update: $it")
+            EngineUpdateAnswer.Failed("couldn't reach the engine")
+        }
     }
 
     /** Recent engine log entries (newest first), for debugging. */

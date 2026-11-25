@@ -4,6 +4,7 @@ import com.tulipskun.aixodia.DeviceCatalog
 import com.tulipskun.aixodia.DeviceEntry
 import com.tulipskun.aixodia.EngineCatalog
 import com.tulipskun.aixodia.SettingsStore
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
@@ -40,8 +41,12 @@ class DeviceDirectory(
                 }
                 DeviceRead.Listing(DeviceCatalog.parse(response.body?.string().orEmpty()))
             }
+        } catch (e: CancellationException) {
+            // The Droidime list was closed; that is not a device being silent.
+            throw e
         } catch (e: Exception) {
-            DeviceRead.Failed(e.message ?: "no reply")
+            android.util.Log.w("Devices", "listing: $e")
+            DeviceRead.Failed("couldn't reach the gateway")
         }
     }
 

@@ -6,6 +6,7 @@
 package com.tulipskun.aixodia.ui.settings
 
 import android.content.Intent
+import android.util.Log
 import android.net.Uri
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -86,6 +87,7 @@ import com.tulipskun.aixodia.data.model.SettingsView
 import com.tulipskun.aixodia.data.model.ProviderStatus
 import com.tulipskun.aixodia.data.model.ProviderView
 import com.tulipskun.aixodia.data.remote.ChatTransport
+import com.tulipskun.aixodia.data.runCatchingCancellable
 import com.tulipskun.aixodia.data.remote.ConnState
 import com.tulipskun.aixodia.data.remote.DaemonDiscovery
 import com.tulipskun.aixodia.data.remote.DiscoveryPhase
@@ -162,11 +164,17 @@ fun SettingsScreen(
     }
 
     // load reports whether the daemon answered. A failed read keeps the list it
-    // already had and names the failure: a screen that empties itself and then
-    // says "ทุก provider ใช้งานได้" is worse than no answer at all.
+    // already had and says so in a sentence a person can act on: a screen that
+    // empties itself and then says "ทุก provider ใช้งานได้" is worse than no
+    // answer at all, and an exception's own wording is not an answer either.
+    //
+    // The read runs through [runCatchingCancellable] because leaving the screen
+    // cancels the effect, and a cancellation is not a failed load: swallowing it
+    // printed "The coroutine scope left the composition" on the settings page as
+    // if the engine had refused something.
     val load: suspend (probe: Boolean) -> Boolean = { probe ->
         loading = true
-        val loaded = runCatching {
+        val loaded = runCatchingCancellable {
             if (probe) history.refreshProviders() else history.providers()
         }
         val rows = loaded.getOrNull()
@@ -179,11 +187,12 @@ fun SettingsScreen(
                 probedIds = rows.filter { it.probed || it.lastError.isNotBlank() }.map { it.id }.toSet()
             }
         } else {
-            msg = "Failed to load providers: ${loaded.exceptionOrNull()?.message ?: "unknown"}"
+            Log.w("Settings", "providers: ${loaded.exceptionOrNull()}")
+            msg = "Couldn't load providers. Check the connection and try again."
             msgIsError = true
         }
-        runCatching { history.models() }.getOrNull()?.let { catalogue = it }
-        runCatching { history.agentSettings() }.getOrNull()?.let {
+        runCatchingCancellable { history.models() }.getOrNull()?.let { catalogue = it }
+        runCatchingCancellable { history.agentSettings() }.getOrNull()?.let {
             mainRoute = AgentRoute(it.main.provider, it.main.model)
             mainGeneration = it.main.generation
         }

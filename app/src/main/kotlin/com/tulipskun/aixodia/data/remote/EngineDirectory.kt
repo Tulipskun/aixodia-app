@@ -1,8 +1,11 @@
 package com.tulipskun.aixodia.data.remote
 
+import android.util.Log
 import com.tulipskun.aixodia.EngineCatalog
 import com.tulipskun.aixodia.EngineEntry
 import com.tulipskun.aixodia.SettingsStore
+import com.tulipskun.aixodia.data.runCatchingCancellable
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.MediaType.Companion.toMediaType
@@ -115,6 +118,9 @@ class EngineDirectory(
                     error = "",
                 )
             }
+        } catch (e: CancellationException) {
+            // The card was taken off screen. That is not an unreachable engine.
+            throw e
         } catch (e: Exception) {
             Probe(false, "", e.message ?: "unreachable")
         }
@@ -174,7 +180,7 @@ class EngineDirectory(
             ?: return@withContext EngineDeleteAnswer.Failed("this phone has no gateway address")
         if (token.isBlank()) return@withContext EngineDeleteAnswer.Failed("sign in to AIxodia first")
         val url = "$base/api/engines/$id"
-        runCatching {
+        runCatchingCancellable {
             val request = Request.Builder().url(url)
                 .header("Authorization", "Bearer $token")
                 .header("Accept", "application/json")
@@ -183,7 +189,10 @@ class EngineDirectory(
             client.newCall(request).execute().use { response ->
                 EngineDeleteAnswer.parse(response.body?.string().orEmpty(), response.code)
             }
-        }.getOrElse { EngineDeleteAnswer.Failed(it.message ?: "no reply") }
+        }.getOrElse {
+            Log.w("Engines", "delete $id: $it")
+            EngineDeleteAnswer.Failed("couldn't reach the gateway")
+        }
     }
 
     /**
@@ -198,7 +207,7 @@ class EngineDirectory(
             ?: return@withContext EngineRenameAnswer.Failed("this phone has no gateway address")
         if (token.isBlank()) return@withContext EngineRenameAnswer.Failed("sign in to AIxodia first")
         val body = org.json.JSONObject().put("alias", alias).toString()
-        runCatching {
+        runCatchingCancellable {
             val request = Request.Builder().url("$base/api/engines/$id")
                 .header("Authorization", "Bearer $token")
                 .header("Content-Type", "application/json")
@@ -208,7 +217,10 @@ class EngineDirectory(
             client.newCall(request).execute().use { response ->
                 EngineRenameAnswer.parse(response.body?.string().orEmpty(), response.code)
             }
-        }.getOrElse { EngineRenameAnswer.Failed(it.message ?: "no reply") }
+        }.getOrElse {
+            Log.w("Engines", "rename $id: $it")
+            EngineRenameAnswer.Failed("couldn't reach the gateway")
+        }
     }
 
     /**
