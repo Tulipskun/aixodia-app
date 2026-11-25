@@ -118,7 +118,6 @@ fun SettingsScreen(
     sessionId: String,
     onBack: () -> Unit,
     onOpenBackup: () -> Unit,
-    onOpenFiles: () -> Unit = {},
     discovery: DaemonDiscovery? = null,
     engines: EngineDirectory? = null,
 ) {
@@ -262,7 +261,6 @@ fun SettingsScreen(
                 // a run is followed there while it is happening, and this row is
                 // only the way to get to it.
                 SettingsNavRow("Backup & restore", "") { onOpenBackup() }
-                SettingsNavRow("Files", "Browse, upload and download Linux files") { onOpenFiles() }
                 SettingsNavRow("About", "") { page = SettingsPage.About }
             }
 

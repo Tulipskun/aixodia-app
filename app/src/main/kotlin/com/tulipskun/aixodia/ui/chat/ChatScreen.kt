@@ -274,7 +274,6 @@ fun ChatScreen(
                 sessionId = sessId, onBack = { nav.back() },
                 discovery = discovery, engines = engines,
                 onOpenBackup = { nav.open(Place.Backup) },
-                onOpenFiles = { nav.open(Place.Files) },
             )
             return
         }
@@ -435,7 +434,6 @@ fun ChatScreen(
             sessionId = vm.sessionId, onBack = { nav.back() },
             discovery = discovery, engines = engines,
             onOpenBackup = { nav.open(Place.Backup) },
-            onOpenFiles = { nav.open(Place.Files) },
         )
         return
     }

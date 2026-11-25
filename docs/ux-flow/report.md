@@ -71,11 +71,12 @@ given; the card is the persistent, structured view. Recommendation: keep the car
 as canonical and let the note stay only where the request carried it — but the
 thread note was asked for explicitly, so it is left as is.
 
-### D2 — one screen, two targets
-Files opens from a card's **More** (having selected that engine) and from
-**Settings → Files** (using the stored selection). The screen itself never says
-which engine it is browsing. Recommendation: put the engine's name in the Files
-title (S effort).
+### D2 — one screen, two targets (resolved)
+Files opened from a card's **More** (having selected that engine) and from
+**Settings → Files** (using the stored selection), and the screen never said
+which engine it was browsing. The Settings row has been removed: a file browser
+belongs to the engine whose card opened it, and one entry point is enough. Files
+now exists only behind a card's More.
 
 ### D3 — a card with two dead verbs
 `DroidimeScreen` draws "View screen" / "Control screen" disabled, then a
