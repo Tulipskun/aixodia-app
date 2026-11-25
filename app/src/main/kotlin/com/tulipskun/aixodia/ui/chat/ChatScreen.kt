@@ -43,6 +43,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.CloudUpload
 import androidx.compose.material.icons.filled.Devices
 import androidx.compose.material.icons.filled.Key
 import androidx.compose.material.icons.filled.Menu
@@ -273,8 +274,7 @@ fun ChatScreen(
                 settings = settings, history = history, socket = socket,
                 sessionId = sessId, onBack = { nav.back() },
                 discovery = discovery, engines = engines,
-                onOpenBackup = { nav.open(Place.Backup) },
-            )
+                            )
             return
         }
         SetupNeeded(
@@ -433,8 +433,7 @@ fun ChatScreen(
             settings = settings, history = history, socket = socket,
             sessionId = vm.sessionId, onBack = { nav.back() },
             discovery = discovery, engines = engines,
-            onOpenBackup = { nav.open(Place.Backup) },
-        )
+                    )
         return
     }
 
@@ -815,6 +814,25 @@ fun ChatScreen(
                             )
                             Text(
                                 stringResource(R.string.providers),
+                                modifier = Modifier.padding(start = 10.dp),
+                                style = MaterialTheme.typography.labelLarge,
+                            )
+                        }
+                        Row(
+                            Modifier
+                                .fillMaxWidth()
+                                .clickable { openFromDrawer(Place.Backup) }
+                                .padding(horizontal = 16.dp, vertical = 10.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Icon(
+                                Icons.Default.CloudUpload,
+                                contentDescription = null,
+                                modifier = Modifier.size(18.dp),
+                                tint = MaterialTheme.colorScheme.primary,
+                            )
+                            Text(
+                                stringResource(R.string.backup_and_restore),
                                 modifier = Modifier.padding(start = 10.dp),
                                 style = MaterialTheme.typography.labelLarge,
                             )

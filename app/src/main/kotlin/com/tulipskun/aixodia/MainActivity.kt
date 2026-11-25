@@ -20,6 +20,7 @@ import com.tulipskun.aixodia.ui.engines.EnginesScreen
 import com.tulipskun.aixodia.ui.nav.Nav
 import com.tulipskun.aixodia.ui.nav.Place
 import com.tulipskun.aixodia.ui.providers.ProvidersScreen
+import com.tulipskun.aixodia.ui.settings.BackupScreen
 import com.tulipskun.aixodia.ui.theme.AIxodiaTheme
 import kotlinx.coroutines.launch
 
@@ -66,6 +67,7 @@ class MainActivity : ComponentActivity() {
                             onOpenSettings = { nav.open(Place.Settings) },
                             onOpenDroidime = { nav.open(Place.Droidime) },
                             onOpenProviders = { nav.open(Place.Providers) },
+                            onOpenBackup = { nav.open(Place.Backup) },
                         )
                         // The phones DroidIME runs on. A place of its own, so back
                         // from it lands on the engines and the drawer says which of
@@ -78,11 +80,20 @@ class MainActivity : ComponentActivity() {
                             history = c.historyApi,
                             onBack = { nav.back() },
                         )
+                        // A backup is a control over the machine, not a corner of
+                        // one engine's settings: it was the only screen reachable
+                        // from Settings alone, one level deeper than the drawers
+                        // that reach everything else.
+                        Place.Backup -> BackupScreen(
+                            history = c.historyApi,
+                            onBack = { nav.back() },
+                        )
                         Place.Droidime -> DroidimeScreen(
                             devices = c.devices,
                             onOpenEngines = { nav.backTo(Place.Engines) },
                             onOpenSettings = { nav.open(Place.Settings) },
                             onOpenProviders = { nav.open(Place.Providers) },
+                            onOpenBackup = { nav.open(Place.Backup) },
                         )
                         // Every other place is a pane of one engine, and the
                         // chat screen is the host of them: it owns the sockets

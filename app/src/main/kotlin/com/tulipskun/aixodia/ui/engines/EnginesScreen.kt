@@ -28,6 +28,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AutoAwesome
+import androidx.compose.material.icons.filled.CloudUpload
 import androidx.compose.material.icons.filled.Devices
 import androidx.compose.material.icons.filled.Key
 import androidx.compose.material.icons.filled.Refresh
@@ -133,6 +134,7 @@ fun EnginesScreen(
     onOpenSettings: () -> Unit,
     onOpenDroidime: () -> Unit,
     onOpenProviders: () -> Unit,
+    onOpenBackup: () -> Unit,
 ) {
     val scope = rememberCoroutineScope()
     val drawer = rememberDrawerState(DrawerValue.Closed)
@@ -288,6 +290,12 @@ fun EnginesScreen(
                         label = "Providers",
                         current = false,
                         onClick = { scope.launch { drawer.close() }; onOpenProviders() },
+                    )
+                    DrawerNavRow(
+                        icon = Icons.Default.CloudUpload,
+                        label = "Backup & restore",
+                        current = false,
+                        onClick = { scope.launch { drawer.close() }; onOpenBackup() },
                     )
                     Spacer(Modifier.weight(1f))
                     Box(

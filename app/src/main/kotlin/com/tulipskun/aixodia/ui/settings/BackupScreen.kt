@@ -752,9 +752,13 @@ fun ScopeCard(
         if (reportsScope) {
             PickerRow(
                 label = "Manage backup files and folders",
-                value = if (includes.isEmpty()) "Nothing selected"
+                // An empty allowlist is no filter at all: the engine backs up the
+                // whole root. It used to select nothing, which published an empty
+                // manifest over a good one.
+                value = if (includes.isEmpty()) "Everything under the root"
                     else "${includes.size} rules",
-                hint = "A checked folder includes its contents. A partial checkbox marks excluded items inside it.",
+                hint = "A checked folder includes its contents. A partial checkbox marks excluded items inside it. " +
+                    "With nothing checked, the whole root is backed up.",
                 onPick = onEditScope,
             )
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {

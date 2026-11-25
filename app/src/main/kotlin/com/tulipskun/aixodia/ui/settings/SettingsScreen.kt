@@ -117,7 +117,6 @@ fun SettingsScreen(
     socket: ChatTransport,
     sessionId: String,
     onBack: () -> Unit,
-    onOpenBackup: () -> Unit,
     discovery: DaemonDiscovery? = null,
     engines: EngineDirectory? = null,
 ) {
@@ -257,10 +256,6 @@ fun SettingsScreen(
             if (page == SettingsPage.Main) {
                 SettingsNavRow("Connection", "") { page = SettingsPage.Connection }
                 SettingsNavRow("Agent defaults", "") { page = SettingsPage.Agent }
-                // The backup page is its own screen rather than a page in here:
-                // a run is followed there while it is happening, and this row is
-                // only the way to get to it.
-                SettingsNavRow("Backup & restore", "") { onOpenBackup() }
                 SettingsNavRow("About", "") { page = SettingsPage.About }
             }
 

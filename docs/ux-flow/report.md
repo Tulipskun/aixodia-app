@@ -78,6 +78,13 @@ which engine it was browsing. The Settings row has been removed: a file browser
 belongs to the engine whose card opened it, and one entry point is enough. Files
 now exists only behind a card's More.
 
+### D2b — the only screen behind Settings (resolved)
+**Backup & restore** was the last control over the machine reachable from one
+place only, one level deeper than Providers and Settings themselves. It is now a
+top-level place like them, with a row in every drawer and its own Back. Settings
+keeps what belongs to this phone and this engine's agent, not the machine's
+storage.
+
 ### D3 — a card with two dead verbs
 `DroidimeScreen` draws "View screen" / "Control screen" disabled, then a
 paragraph of apology. Recommendation: either wire them to the device's own
@@ -89,6 +96,6 @@ origin, or replace the pair with one line naming what is missing.
 |---|---|---|
 | Providers | both drawers | keep both — same depth, same result |
 | Settings | both drawers, settings command | keep |
-| Backup & restore | composer command, Settings row | keep both; same screen, same target |
-| Files | card More, Settings row | keep, but say whose files (D2) |
+| Backup & restore | composer command, three drawers | keep — same depth as Providers, same screen |
+| Files | card More | one entry point (D2) |
 | Engines list | drawer row, composer command, system back | keep — all three are one step |

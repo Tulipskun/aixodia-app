@@ -25,6 +25,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.BatteryFull
+import androidx.compose.material.icons.filled.CloudUpload
 import androidx.compose.material.icons.filled.Devices
 import androidx.compose.material.icons.filled.Key
 import androidx.compose.material.icons.filled.Memory
@@ -97,6 +98,7 @@ fun DroidimeScreen(
     onOpenEngines: () -> Unit,
     onOpenSettings: () -> Unit,
     onOpenProviders: () -> Unit,
+    onOpenBackup: () -> Unit,
 ) {
     val scope = rememberCoroutineScope()
     val drawer = rememberDrawerState(DrawerValue.Closed)
@@ -157,6 +159,12 @@ fun DroidimeScreen(
                         label = "Droidime",
                         current = true,
                         onClick = { scope.launch { drawer.close() } },
+                    )
+                    DrawerNavRow(
+                        icon = Icons.Default.CloudUpload,
+                        label = "Backup & restore",
+                        current = false,
+                        onClick = { scope.launch { drawer.close() }; onOpenBackup() },
                     )
                     Spacer(Modifier.weight(1f))
                     DrawerNavRow(
