@@ -132,12 +132,12 @@ import com.tulipskun.aixodia.ui.display.EmptyChatState
 import com.tulipskun.aixodia.ui.display.ErrorCard
 import com.tulipskun.aixodia.ui.display.drawerFloorGuard
 import com.tulipskun.aixodia.ui.display.GoalsCard
-import com.tulipskun.aixodia.ui.display.GoalsNoteMarker
 import com.tulipskun.aixodia.ui.display.LiveAnswer
 import com.tulipskun.aixodia.ui.display.LiveThink
 import com.tulipskun.aixodia.ui.display.ScreenHead
 import com.tulipskun.aixodia.ui.display.CompactMarker
 import com.tulipskun.aixodia.ui.display.MessageBlock
+import com.tulipskun.aixodia.ui.display.noteText
 import com.tulipskun.aixodia.ui.display.OfflineBanner
 import com.tulipskun.aixodia.ui.display.SessionStrip
 import com.tulipskun.aixodia.ui.display.sessionTotals
@@ -1099,9 +1099,16 @@ fun ChatScreen(
                         // puts them at the head of every request for the whole
                         // chat, so the reader sees the same list the model does,
                         // statuses and all; nothing is removed from it when a
-                        // goal is finished.
+                        // goal is finished. It reads as one more message in the
+                        // thread, because that is what it is.
                         is LiveBlock.Note -> item(key = row.key) {
-                            GoalsNoteMarker(block.text)
+                            val note = noteText(block.text)
+                            if (note.isNotEmpty()) {
+                                MarkdownText(
+                                    text = note,
+                                    color = MaterialTheme.colorScheme.onSurface,
+                                )
+                            }
                         }
                     }
                 }
