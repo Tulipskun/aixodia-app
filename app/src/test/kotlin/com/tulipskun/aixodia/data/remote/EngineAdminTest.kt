@@ -45,16 +45,15 @@ class EngineAdminTest {
     }
 
     @Test
-    fun a_machine_that_was_only_asleep_is_refused_with_a_reason_to_read() {
+    fun an_offline_engine_is_deleted_rather_than_held_for_later() {
+        // "Offline" is one answer, and "delete" is one answer: nothing is kept
+        // back for a machine that is not beating.
         val answer = EngineDeleteAnswer.parse(
-            """{"error":"Work was last seen 10 min, so its address is kept: an engine may be """ +
-                """deleted once it has been silent for 24 h","code":"ENGINE_TOO_RECENT",""" +
-                """"silent_seconds":600,"wait_seconds":85800}""",
-            409,
+            """{"ok":true,"deleted":"work-1","name":"Work","url_removed":true,
+                "steps":{"dns":"removed 1","tunnel":"removed 1","keys":"removed 3"}}""",
+            200,
         )
-        val refused = answer as EngineDeleteAnswer.Refused
-        assertFalse("asleep is not live", refused.online)
-        assertTrue(refused.headline().contains("last seen 10 min"))
+        assertEquals("Deleted work-1, and its address", answer.headline())
     }
 
     @Test

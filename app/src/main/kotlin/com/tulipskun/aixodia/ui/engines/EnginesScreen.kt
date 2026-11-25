@@ -481,31 +481,20 @@ fun EnginesScreen(
 
     // Deleting is the one irreversible verb in this screen, so it is asked about
     // in words, with the machine's name in them, and with what it does: the row,
-    // the hostname and the tunnel. The wait is said here too, because the gateway
-    // refuses a machine that has only been quiet for a while and a reader who
-    // does not know why would try again and again.
+    // the hostname and the tunnel.
     deleteEngine.value?.let { engine ->
         AlertDialog(
             onDismissRequest = { deleteEngine.value = null },
             title = { Text("Delete ${engine.displayName}?") },
             text = {
-                Column {
-                    Text(
-                        "It is removed from the engine list for every client, and its address " +
-                            "is taken down with it: the DNS record, the tunnel and the keys that " +
-                            "made it reachable. The machine itself is not touched, and an engine " +
-                            "that starts again makes a fresh address for itself.",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                    Spacer(Modifier.height(Space.s2))
-                    Text(
-                        "A machine that is only asleep cannot be deleted: its address is kept " +
-                            "until it has been silent for a day.",
-                        style = MaterialTheme.typography.labelMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
+                Text(
+                    "It is removed from the engine list for every client, and its address is " +
+                        "taken down with it: the DNS record, the tunnel and the keys that made it " +
+                        "reachable. The machine itself is not touched, and an engine that starts " +
+                        "again makes a fresh address for itself.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
             },
             confirmButton = {
                 TextButton(
