@@ -169,6 +169,17 @@ class ChatViewModel(
             val summary: List<String>,
             val atMs: Long,
         ) : LiveBlock
+        /**
+         * The goals and plans the engine put in front of the model for this
+         * chat: the same text the request carries, listed with the status of
+         * every item. It opens the turn because it opens the request, and it
+         * stays for the whole conversation — a finished goal is marked, not
+         * removed.
+         */
+        data class Note(
+            val text: String,
+            val atMs: Long,
+        ) : LiveBlock
     }
 
     /**
@@ -1061,6 +1072,23 @@ class ChatViewModel(
         }
         // The engine trimmed the prompt. The marker lands where it happened in
         // the thread; the digest says what fell out of the window.
+        // The goals and plans the request carries. They open the turn because
+        // they open the request, and they are one block per turn: a second
+        // frame for the same turn replaces the first rather than stacking.
+        if (f.stage == "reminder") {
+            mutateLiveBlocks { blocks ->
+                val note = LiveBlock.Note(
+                    text = f.text,
+                    atMs = SystemClock.elapsedRealtime(),
+                )
+                if (blocks.any { it is LiveBlock.Note }) {
+                    blocks.map { if (it is LiveBlock.Note) note else it }
+                } else {
+                    listOf(note) + blocks
+                }
+            }
+            return
+        }
         if (f.stage == "compact") {
             mutateLiveBlocks { blocks ->
                 blocks + LiveBlock.Compact(
@@ -1551,6 +1579,7 @@ class ChatViewModel(
                 }
                 is LiveBlock.Say -> Unit
                 is LiveBlock.Compact -> Unit
+                is LiveBlock.Note -> Unit
             }
         }
         val answer = blocks.drop(lastAct + 1)
@@ -2119,6 +2148,7 @@ internal fun uniqueLiveKeys(blocks: List<ChatViewModel.LiveBlock>): List<String>
             is ChatViewModel.LiveBlock.Act -> "live-act-" + block.step.key
             is ChatViewModel.LiveBlock.Think -> "live-think-" + block.id.ifBlank { block.startedAtMs.toString() }
             is ChatViewModel.LiveBlock.Compact -> "live-compact-" + block.atMs
+            is ChatViewModel.LiveBlock.Note -> "live-note"
         }
         if (used.add(base)) return@map base
         var n = 2

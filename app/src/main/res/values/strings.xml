@@ -106,6 +106,7 @@
     <!-- Goals card and compact marker. -->
     <string name="goals_title">Goals &amp; plans</string>
     <string name="goals_open_count">%1$d open</string>
+    <string name="goals_note_title">Goals &amp; plans sent with this turn (%1$d)</string>
     <string name="goals_in_progress">In progress</string>
     <string name="goals_completed">Completed</string>
     <string name="goals_dropped">Dropped</string>

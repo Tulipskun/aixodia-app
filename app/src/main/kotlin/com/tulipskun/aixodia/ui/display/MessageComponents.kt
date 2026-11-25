@@ -1361,6 +1361,86 @@ private fun GoalsSection(
 }
 
 /**
+ * The goals and plans the request carries, exactly as the model reads them.
+ *
+ * The engine places this list at the head of every request for the whole chat
+ * rather than re-writing it round by round, so an item keeps its place after it
+ * is done or dropped and the reader sees the same text the model does.
+ */
+@Composable
+fun GoalsNoteMarker(text: String) {
+    val body = remember(text) { noteBody(text) }
+    var expanded by remember(text) { mutableStateOf(false) }
+    if (body.isEmpty()) return
+    Surface(
+        color = MaterialTheme.colorScheme.surfaceContainerLowest,
+        shape = MaterialTheme.shapes.small,
+        modifier = Modifier
+            .padding(top = 4.dp)
+            .fillMaxWidth(),
+    ) {
+        Column(Modifier.padding(horizontal = 10.dp, vertical = 4.dp)) {
+            Row(
+                Modifier
+                    .fillMaxWidth()
+                    .clickable { expanded = !expanded }
+                    .expandable(
+                        expanded,
+                        true,
+                        stringResource(R.string.state_collapsed),
+                        stringResource(R.string.state_expanded),
+                    )
+                    .padding(vertical = 2.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Icon(
+                    if (expanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
+                    contentDescription = null,
+                    modifier = Modifier.size(16.dp),
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Spacer(Modifier.size(6.dp))
+                Text(
+                    stringResource(R.string.goals_note_title, body.size),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            AnimatedVisibility(
+                visible = expanded,
+                enter = expandVertically(),
+                exit = shrinkVertically(),
+            ) {
+                Column(Modifier.padding(bottom = 4.dp)) {
+                    body.forEach { line ->
+                        Text(
+                            line,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+/**
+ * The reminder the engine sends, cut down to the lines a reader wants: headings
+ * and items, without the instructions to the model. A line that is neither is
+ * dropped, so the note says what the chat is about and not how the model is
+ * asked to behave.
+ */
+internal fun noteBody(text: String): List<String> =
+    text.lineSequence()
+        .map { it.trimEnd() }
+        .filter { line ->
+            val t = line.trim()
+            t.startsWith("- [") || t == "Goals:" || t == "Plans:"
+        }
+        .toList()
+
+/**
  * The engine trimmed the prompt to make this request fit: whole older turns
  * fell out of the context window. The marker says how many were kept and lets
  * the reader see what the dropped turns were about.

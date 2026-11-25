@@ -132,6 +132,7 @@ import com.tulipskun.aixodia.ui.display.EmptyChatState
 import com.tulipskun.aixodia.ui.display.ErrorCard
 import com.tulipskun.aixodia.ui.display.drawerFloorGuard
 import com.tulipskun.aixodia.ui.display.GoalsCard
+import com.tulipskun.aixodia.ui.display.GoalsNoteMarker
 import com.tulipskun.aixodia.ui.display.LiveAnswer
 import com.tulipskun.aixodia.ui.display.LiveThink
 import com.tulipskun.aixodia.ui.display.ScreenHead
@@ -1093,6 +1094,14 @@ fun ChatScreen(
                                 droppedTurns = block.droppedTurns,
                                 summary = block.summary,
                             )
+                        }
+                        // The goals and plans this turn was given. The engine
+                        // puts them at the head of every request for the whole
+                        // chat, so the reader sees the same list the model does,
+                        // statuses and all; nothing is removed from it when a
+                        // goal is finished.
+                        is LiveBlock.Note -> item(key = row.key) {
+                            GoalsNoteMarker(block.text)
                         }
                     }
                 }
