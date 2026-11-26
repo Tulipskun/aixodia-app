@@ -109,6 +109,9 @@ class SettingsStore(private val ctx: Context) {
     // The folder the file manager was last looking at. It is the machine's path,
     // not the phone's, and the reader expects to come back to where they were.
     private val filesPath = stringPreferencesKey("files_path")
+    // Which column the file manager sorts by, and which way. The two choices
+    // are one value so a redraw can never see a new column with the old direction.
+    private val filesSort = stringPreferencesKey("files_sort")
     // The windows behind the engine cards' charts, as JSON keyed by engine id. A
     // graph is a history this phone collected, so it outlives both the screen and
     // the process: reopening the app must not start the strip over.
@@ -154,6 +157,9 @@ class SettingsStore(private val ctx: Context) {
     /** The folder the file manager opens on: where the reader last was. */
     val filesPathFlow: Flow<String> = ctx.ds.data.map { it[filesPath]?.takeIf(String::isNotBlank) ?: "/" }
 
+    /** The column and direction the file manager last used, as `"name:asc"`. */
+    val filesSortFlow: Flow<String> = ctx.ds.data.map { it[filesSort]?.takeIf(String::isNotBlank) ?: "name:asc" }
+
     /** The quality this phone asked for last, or null when it never chose. */
     suspend fun screenQuality(): Int? = ctx.ds.data.first()[screenQuality]
 
@@ -178,6 +184,10 @@ class SettingsStore(private val ctx: Context) {
     suspend fun saveFilesPath(path: String) {
         val clean = path.trim().ifBlank { "/" }
         ctx.ds.edit { it[filesPath] = clean }
+    }
+
+    suspend fun saveFilesSort(value: String) {
+        ctx.ds.edit { it[filesSort] = value.trim().ifBlank { "name:asc" } }
     }
 
     /** The cached daemon start time (unix second), 0 when never seen. */

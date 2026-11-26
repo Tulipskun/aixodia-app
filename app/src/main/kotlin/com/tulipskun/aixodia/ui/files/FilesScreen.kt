@@ -1,9 +1,13 @@
+@file:OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
+
 package com.tulipskun.aixodia.ui.files
 
+import android.widget.Toast
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.foundation.clickable
+import androidx.compose.foundation.background
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -17,12 +21,16 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.ArrowUpward
+import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.CreateNewFolder
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Sort
 import androidx.compose.material.icons.filled.UploadFile
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
@@ -48,9 +56,14 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.semantics.selected
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.tulipskun.aixodia.R
 import com.tulipskun.aixodia.SettingsStore
 import com.tulipskun.aixodia.data.remote.ClientToken
 import com.tulipskun.aixodia.data.remote.FilesApi
@@ -80,6 +93,7 @@ fun FilesScreen(
     onBack: () -> Unit,
 ) {
     val context = LocalContext.current
+    val clip = LocalClipboardManager.current
     val api = remember(settings, context) { FilesApi(settings, context.contentResolver, clientToken) }
     val scope = rememberCoroutineScope()
     var path by rememberSaveable { mutableStateOf("/") }
@@ -96,8 +110,15 @@ fun FilesScreen(
     var editName by remember { mutableStateOf("") }
     var mode by remember { mutableStateOf("0644") }
     var pendingDownload by remember { mutableStateOf<RemoteFile?>(null) }
+    var sortKey by rememberSaveable { mutableStateOf(FileSortKey.Name.value) }
+    var sortDesc by rememberSaveable { mutableStateOf(false) }
+    var sortMenu by remember { mutableStateOf(false) }
+    var selection by remember { mutableStateOf<Set<String>>(emptySet()) }
+    val sort = FileSort(FileSortKey.from(sortKey), sortDesc)
+    val ordered = remember(listing?.entries, sort) { sortedEntries(listing?.entries.orEmpty(), sort) }
 
     fun load(target: String) {
+        selection = emptySet()
         path = target
         pathInput = target
         loading = true
@@ -116,6 +137,21 @@ fun FilesScreen(
                 .onFailure { error = it.message ?: "Cannot list folder" }
             loading = false
         }
+    }
+
+    // Both choices land in one preference, so a reopened screen cannot show a
+    // new column ordered by the old direction.
+    fun applySort(key: String? = null, descending: Boolean? = null) {
+        key?.let { sortKey = it }
+        descending?.let { sortDesc = it }
+        val value = FileSort(FileSortKey.from(sortKey), sortDesc).stored()
+        scope.launch { settings.saveFilesSort(value) }
+    }
+
+    fun copyPaths(text: String, message: String) {
+        if (text.isBlank()) return
+        clip.setText(AnnotatedString(text))
+        Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
     }
 
     // One trip for the whole selection: the picker hands over every file that
@@ -160,18 +196,54 @@ fun FilesScreen(
     // the tree is what the parent-folder arrow in the header is for; a reader
     // who presses back in a deep folder wants the chat, not the folder above.
     BackHandler(onBack = onBack)
-    LaunchedEffect(Unit) { load(settings.filesPathFlow.first()) }
+    LaunchedEffect(Unit) {
+        val saved = FileSort.parse(settings.filesSortFlow.first())
+        sortKey = saved.key.value
+        sortDesc = saved.descending
+        load(settings.filesPathFlow.first())
+    }
 
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Files") },
+                title = { Text(if (selection.isEmpty()) "Files" else "${selection.size} selected") },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(Icons.Default.ArrowBack, contentDescription = "Back")
                     }
                 },
                 actions = {
+                    if (selection.isNotEmpty()) {
+                        IconButton(onClick = {
+                            copyPaths(pathsToCopy(ordered, selection), context.getString(R.string.copied))
+                        }) {
+                            Icon(Icons.Default.ContentCopy, contentDescription = "Copy paths")
+                        }
+                        IconButton(onClick = { selection = emptySet() }) {
+                            Icon(Icons.Default.Close, contentDescription = "Clear selection")
+                        }
+                    }
+                    Box {
+                        IconButton(onClick = { sortMenu = true }) {
+                            Icon(Icons.Default.Sort, contentDescription = "Sort")
+                        }
+                        DropdownMenu(expanded = sortMenu, onDismissRequest = { sortMenu = false }) {
+                            for (option in FileSortKey.entries) {
+                                DropdownMenuItem(
+                                    text = {
+                                        Text(
+                                            (if (option.value == sortKey) "✓ " else "") + option.label,
+                                        )
+                                    },
+                                    onClick = { applySort(key = option.value); sortMenu = false },
+                                )
+                            }
+                            DropdownMenuItem(
+                                text = { Text(if (sortDesc) "Descending" else "Ascending") },
+                                onClick = { applySort(descending = !sortDesc); sortMenu = false },
+                            )
+                        }
+                    }
                     IconButton(onClick = { load(path) }, enabled = !busy) {
                         Icon(Icons.Default.Refresh, contentDescription = "Refresh")
                     }
@@ -245,17 +317,24 @@ fun FilesScreen(
                     modifier = Modifier.weight(1f),
                     verticalArrangement = Arrangement.spacedBy(2.dp),
                 ) {
-                    items(listing?.entries.orEmpty(), key = { it.path }) { file ->
+                    items(ordered, key = { it.path }) { file ->
                         FileRow(
                             file = file,
                             enabled = !busy,
+                            isSelected = file.path in selection,
                             onOpen = {
-                                if (file.isDirectory) load(file.path)
+                                if (selection.isNotEmpty()) {
+                                    selection = if (file.path in selection) selection - file.path else selection + file.path
+                                } else if (file.isDirectory) load(file.path)
                                 else {
                                     pendingDownload = file
                                     downloadPicker.launch(file.name)
                                 }
                             },
+                            onSelect = {
+                                selection = if (file.path in selection) selection - file.path else selection + file.path
+                            },
+                            onCopyPath = { copyPaths(file.path, context.getString(R.string.copied)) },
                             onAction = {
                                 selected = file
                                 editName = file.name
@@ -358,19 +437,29 @@ fun FilesScreen(
 private fun FileRow(
     file: RemoteFile,
     enabled: Boolean,
+    isSelected: Boolean,
     onOpen: () -> Unit,
+    onSelect: () -> Unit,
+    onCopyPath: () -> Unit,
     onAction: (FileAction) -> Unit,
 ) {
     var menu by remember { mutableStateOf(false) }
     Row(
-        modifier = Modifier.fillMaxWidth().clickable(enabled = enabled, onClick = onOpen).padding(vertical = 9.dp, horizontal = 4.dp),
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(if (isSelected) MaterialTheme.colorScheme.secondaryContainer else MaterialTheme.colorScheme.background)
+            .combinedClickable(enabled = enabled, onClick = onOpen, onLongClick = onSelect)
+            .semantics { selected = isSelected }
+            .padding(vertical = 9.dp, horizontal = 4.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(10.dp),
     ) {
         Icon(
-            if (file.isDirectory) Icons.Default.Folder else Icons.Default.Description,
+            if (isSelected) Icons.Default.CheckCircle
+            else if (file.isDirectory) Icons.Default.Folder
+            else Icons.Default.Description,
             contentDescription = null,
-            tint = if (file.isDirectory) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+            tint = if (isSelected || file.isDirectory) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.size(24.dp),
         )
         Column(Modifier.weight(1f)) {
@@ -388,6 +477,7 @@ private fun FileRow(
                 Icon(Icons.Default.MoreVert, contentDescription = "File actions")
             }
             DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
+                DropdownMenuItem(text = { Text("Copy path") }, onClick = { menu = false; onCopyPath() })
                 DropdownMenuItem(text = { Text("Rename") }, onClick = { menu = false; onAction(FileAction.Rename) })
                 DropdownMenuItem(text = { Text("Permissions") }, onClick = { menu = false; onAction(FileAction.Permissions) })
                 DropdownMenuItem(text = { Text("Delete") }, onClick = { menu = false; onAction(FileAction.Delete) })
