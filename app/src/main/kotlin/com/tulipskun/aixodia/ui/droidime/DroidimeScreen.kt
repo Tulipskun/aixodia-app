@@ -50,6 +50,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -108,6 +109,12 @@ fun DroidimeScreen(
     // same reason the engine cards stopped trusting a lease read once.
     val live = remember { mutableStateMapOf<String, Boolean>() }
 
+    // The device whose screen is open, and whether a tap on it may touch the
+    // phone. The two verbs are one pane: watching and controlling are the same
+    // picture with the pointer switched on.
+    var watching by remember { mutableStateOf<DeviceEntry?>(null) }
+    var controlling by remember { mutableStateOf(false) }
+
     suspend fun reload() {
         when (val read = devices.devices()) {
             is DeviceDirectory.DeviceRead.Listing -> {
@@ -138,6 +145,19 @@ fun DroidimeScreen(
                 delay(DEVICE_MS)
             }
         }
+    }
+
+    val shown = watching
+    if (shown != null) {
+        val currentOnClose by rememberUpdatedState { watching = null }
+        BackHandler { currentOnClose() }
+        DeviceScreenPane(
+            devices = devices,
+            device = shown,
+            control = controlling,
+            onClose = { watching = null },
+        )
+        return
     }
 
     ModalNavigationDrawer(
@@ -227,7 +247,14 @@ fun DroidimeScreen(
                     }
                 }
                 items(listed.value, key = { it.id }) { device ->
-                    DeviceCard(device = device, online = live[device.id] ?: device.online)
+                    DeviceCard(
+                        device = device,
+                        online = live[device.id] ?: device.online,
+                        onWatch = { d, control ->
+                            controlling = control
+                            watching = d
+                        },
+                    )
                 }
             }
         }
@@ -244,7 +271,11 @@ fun DroidimeScreen(
  * nobody asked.
  */
 @Composable
-internal fun DeviceCard(device: DeviceEntry, online: Boolean) {
+internal fun DeviceCard(
+    device: DeviceEntry,
+    online: Boolean,
+    onWatch: (DeviceEntry, Boolean) -> Unit,
+) {
     val offline = !online
     Column(
         Modifier
@@ -335,15 +366,16 @@ internal fun DeviceCard(device: DeviceEntry, online: Boolean) {
             Modifier.fillMaxWidth().padding(top = Space.s3),
             horizontalArrangement = Arrangement.spacedBy(Space.s2),
         ) {
-            EngineAction(Icons.Default.Visibility, "View screen", disabled = true) {}
-            EngineAction(Icons.Default.Mouse, "Control screen", disabled = true) {}
+            EngineAction(
+                Icons.Default.Visibility,
+                "View screen",
+                disabled = offline,
+            ) { onWatch(device, false) }
+            EngineAction(
+                Icons.Default.Mouse,
+                "Control screen",
+                disabled = offline,
+            ) { onWatch(device, true) }
         }
-        Spacer(Modifier.height(Space.s2))
-        Text(
-            "Viewing a device's screen is not wired yet: the registry can say whether the " +
-                "phone is answering, and nothing more.",
-            style = MaterialTheme.typography.labelMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
     }
 }

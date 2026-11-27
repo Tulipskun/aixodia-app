@@ -85,6 +85,13 @@ top-level place like them, with a row in every drawer and its own Back. Settings
 keeps what belongs to this phone and this engine's agent, not the machine's
 storage.
 
+### D3 — a card with two dead verbs (resolved)
+**View screen** and **Control screen** now open the phone's own screen: the
+picture is the device's `screenshot` tool through the gateway, and a tap on it is
+the device's `tap` tool spoken in the device's pixels. A tap on the letterbox
+beside the picture is not a place on the phone and is dropped. The paragraph of
+apology is gone.
+
 ### D3 — a card with two dead verbs
 `DroidimeScreen` draws "View screen" / "Control screen" disabled, then a
 paragraph of apology. Recommendation: either wire them to the device's own

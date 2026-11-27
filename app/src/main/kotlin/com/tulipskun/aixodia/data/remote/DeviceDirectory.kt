@@ -8,7 +8,10 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
+import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.Request
+import okhttp3.RequestBody.Companion.toRequestBody
+import org.json.JSONObject
 
 /**
  * The phones DroidIME runs on, which are not engines and are not listed with them.
@@ -60,6 +63,73 @@ class DeviceDirectory(
         try {
             client.newCall(request).execute().use { it.isSuccessful }
         } catch (_: Exception) {
+            false
+        }
+    }
+
+    /**
+     * The device's screen, drawn by its own MCP server. PNG bytes, or null when
+     * the phone did not answer. The picture is taken by the gateway, which holds
+     * the Access service token, so this app never keeps a key to somebody's phone.
+     */
+    suspend fun screen(id: String): ByteArray? = withContext(Dispatchers.IO) {
+        val base = EngineCatalog.registryUrl(settings.current().daemonUrl) ?: return@withContext null
+        val request = Request.Builder().url("$base/api/devices/$id/screen")
+            .header("Accept", "image/png")
+            .get()
+            .build()
+        try {
+            client.newCall(request).execute().use { response ->
+                if (!response.isSuccessful) return@use null
+                response.body?.bytes()
+            }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            android.util.Log.w("Devices", "screen $id: $e")
+            null
+        }
+    }
+
+    /** The device's own idea of its screen size, in the pixels a tap speaks. */
+    suspend fun screenSize(id: String): Pair<Int, Int>? = withContext(Dispatchers.IO) {
+        val base = EngineCatalog.registryUrl(settings.current().daemonUrl) ?: return@withContext null
+        val body = JSONObject().put("name", "screen_size").put("arguments", JSONObject()).toString()
+        val request = Request.Builder().url("$base/api/devices/$id/tool")
+            .header("Accept", "application/json")
+            .header("Content-Type", "application/json")
+            .post(body.toRequestBody("application/json".toMediaType()))
+            .build()
+        try {
+            client.newCall(request).execute().use { response ->
+                if (!response.isSuccessful) return@use null
+                DeviceTools.size(response.body?.string().orEmpty())
+            }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            android.util.Log.w("Devices", "screen size $id: $e")
+            null
+        }
+    }
+
+    /** One touch on a device, in its own pixels. True when the phone took it. */
+    suspend fun tap(id: String, x: Int, y: Int): Boolean = withContext(Dispatchers.IO) {
+        val base = EngineCatalog.registryUrl(settings.current().daemonUrl) ?: return@withContext false
+        val body = JSONObject().put("name", "tap")
+            .put("arguments", JSONObject().put("x", x).put("y", y))
+            .toString()
+        val request = Request.Builder().url("$base/api/devices/$id/tool")
+            .header("Accept", "application/json")
+            .header("Content-Type", "application/json")
+            .post(body.toRequestBody("application/json".toMediaType()))
+            .build()
+        try {
+            client.newCall(request).execute().use { it.isSuccessful }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            android.util.Log.w("Devices", "tap $id: $e")
             false
         }
     }

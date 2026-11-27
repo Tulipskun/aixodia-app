@@ -25,11 +25,11 @@ class DroidimeSnapshots {
 
     @Test
     fun droidimeDeviceOffline() = paparazzi.snapshot {
-        AIxodiaTheme { DeviceCard(device = neo, online = false) }
+        AIxodiaTheme { DeviceCard(device = neo, online = false, onWatch = { _, _ -> }) }
     }
 
     @Test
     fun droidimeDeviceOnline() = paparazzi.snapshot {
-        AIxodiaTheme { DeviceCard(device = neo.copy(battery = 62), online = true) }
+        AIxodiaTheme { DeviceCard(device = neo.copy(battery = 62), online = true, onWatch = { _, _ -> }) }
     }
 }
