@@ -2,6 +2,10 @@
 
 package com.tulipskun.aixodia.ui.files
 
+import android.content.Intent
+import android.net.Uri
+import android.provider.DocumentsContract
+import android.webkit.MimeTypeMap
 import android.widget.Toast
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -24,14 +28,10 @@ import androidx.compose.material.icons.filled.ArrowUpward
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.ContentCopy
-import androidx.compose.material.icons.filled.CreateNewFolder
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.MoreVert
-import androidx.compose.material.icons.filled.Refresh
-import androidx.compose.material.icons.filled.Sort
-import androidx.compose.material.icons.filled.UploadFile
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
@@ -112,8 +112,11 @@ fun FilesScreen(
     var pendingDownload by remember { mutableStateOf<RemoteFile?>(null) }
     var sortKey by rememberSaveable { mutableStateOf(FileSortKey.Name.value) }
     var sortDesc by rememberSaveable { mutableStateOf(false) }
-    var sortMenu by remember { mutableStateOf(false) }
+    var menu by remember { mutableStateOf(false) }
     var selection by remember { mutableStateOf<Set<String>>(emptySet()) }
+    var preview by remember { mutableStateOf<RemoteFile?>(null) }
+    var confirmDeleteSelection by remember { mutableStateOf(false) }
+    var openWithTarget by remember { mutableStateOf<RemoteFile?>(null) }
     val sort = FileSort(FileSortKey.from(sortKey), sortDesc)
     val ordered = remember(listing?.entries, sort) { sortedEntries(listing?.entries.orEmpty(), sort) }
 
@@ -176,20 +179,67 @@ fun FilesScreen(
             }
         }
     }
+    fun openInSystem(uri: Uri, name: String) {
+        val mime = MimeTypeMap.getSingleton().getMimeTypeFromExtension(extensionOf(name))
+            ?: "application/octet-stream"
+        val intent = Intent(Intent.ACTION_VIEW)
+            .setDataAndType(uri, mime)
+            .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        runCatching { context.startActivity(Intent.createChooser(intent, "Open with")) }
+            .onFailure { error = "No app can open $name" }
+    }
+
     val downloadPicker = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/octet-stream")) { uri ->
         val file = pendingDownload
+        val wanted = openWithTarget != null
         if (uri != null && file != null) {
             busy = true
             transfer = Transfer(file.name, 0L, -1L)
             scope.launch {
                 runCatching {
                     api.download(file.path, uri) { done, total -> transfer = Transfer(file.name, done, total) }
-                }.onFailure { error = it.message ?: "Download failed" }
+                }
+                    .onFailure { error = it.message ?: "Download failed" }
+                    .onSuccess { if (wanted) openInSystem(uri, file.name) }
                 busy = false
                 transfer = null
                 pendingDownload = null
+                openWithTarget = null
             }
-        } else pendingDownload = null
+        } else {
+            pendingDownload = null
+            openWithTarget = null
+        }
+    }
+
+    // A folder picker lets one selection of files be saved in one trip, each with
+    // its own name. A failure is reported and the next file in the selection
+    // still gets written, the same promise the upload batch makes.
+    val downloadTreePicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { tree ->
+        val files = ordered.filter { it.path in selection }
+        if (tree != null && files.isNotEmpty()) {
+            busy = true
+            scope.launch {
+                val failures = mutableListOf<String>()
+                files.forEach { file ->
+                    runCatching {
+                        val mime = MimeTypeMap.getSingleton()
+                            .getMimeTypeFromExtension(extensionOf(file.name))
+                            ?: "application/octet-stream"
+                        val target = DocumentsContract.createDocument(
+                            context.contentResolver,
+                            tree,
+                            mime,
+                            file.name,
+                        ) ?: throw IllegalStateException("cannot create file")
+                        api.download(file.path, target)
+                    }.onFailure { failures += file.name + ": " + (it.message ?: "download failed") }
+                }
+                busy = false
+                if (failures.isNotEmpty()) error = failures.joinToString("\n")
+                selection = emptySet()
+            }
+        }
     }
 
     // Back leaves the file manager for the app it was opened from. Walking up
@@ -206,7 +256,13 @@ fun FilesScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text(if (selection.isEmpty()) "Files" else "${selection.size} selected") },
+                title = {
+                    Text(
+                        if (selection.isEmpty()) "Files" else "${selection.size} selected",
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(Icons.Default.ArrowBack, contentDescription = "Back")
@@ -223,35 +279,54 @@ fun FilesScreen(
                             Icon(Icons.Default.Close, contentDescription = "Clear selection")
                         }
                     }
+                    // One overflow keeps the bar from overflowing when a selection
+                    // adds its own actions; the common ones stay one tap away.
                     Box {
-                        IconButton(onClick = { sortMenu = true }) {
-                            Icon(Icons.Default.Sort, contentDescription = "Sort")
+                        IconButton(onClick = { menu = true }) {
+                            Icon(Icons.Default.MoreVert, contentDescription = "More actions")
                         }
-                        DropdownMenu(expanded = sortMenu, onDismissRequest = { sortMenu = false }) {
+                        DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
+                            DropdownMenuItem(
+                                text = { Text("Refresh") },
+                                onClick = { menu = false; load(path) },
+                            )
+                            DropdownMenuItem(
+                                text = { Text("New folder") },
+                                onClick = { menu = false; folderName = ""; newFolder = true },
+                            )
+                            DropdownMenuItem(
+                                text = { Text("Upload files") },
+                                onClick = { menu = false; uploadPicker.launch(arrayOf("*/*")) },
+                            )
+                            if (selection.isEmpty()) {
+                                DropdownMenuItem(
+                                    text = { Text("Select all") },
+                                    onClick = {
+                                        menu = false
+                                        selection = ordered.map { it.path }.toSet()
+                                    },
+                                )
+                            } else {
+                                DropdownMenuItem(
+                                    text = { Text("Download selected") },
+                                    onClick = { menu = false; downloadTreePicker.launch(null) },
+                                )
+                                DropdownMenuItem(
+                                    text = { Text("Delete selected") },
+                                    onClick = { menu = false; confirmDeleteSelection = true },
+                                )
+                            }
                             for (option in FileSortKey.entries) {
                                 DropdownMenuItem(
-                                    text = {
-                                        Text(
-                                            (if (option.value == sortKey) "✓ " else "") + option.label,
-                                        )
-                                    },
-                                    onClick = { applySort(key = option.value); sortMenu = false },
+                                    text = { Text((if (option.value == sortKey) "✓ " else "") + option.label) },
+                                    onClick = { applySort(key = option.value); menu = false },
                                 )
                             }
                             DropdownMenuItem(
                                 text = { Text(if (sortDesc) "Descending" else "Ascending") },
-                                onClick = { applySort(descending = !sortDesc); sortMenu = false },
+                                onClick = { applySort(descending = !sortDesc); menu = false },
                             )
                         }
-                    }
-                    IconButton(onClick = { load(path) }, enabled = !busy) {
-                        Icon(Icons.Default.Refresh, contentDescription = "Refresh")
-                    }
-                    IconButton(onClick = { folderName = ""; newFolder = true }, enabled = !busy) {
-                        Icon(Icons.Default.CreateNewFolder, contentDescription = "New folder")
-                    }
-                    IconButton(onClick = { uploadPicker.launch(arrayOf("*/*")) }, enabled = !busy) {
-                        Icon(Icons.Default.UploadFile, contentDescription = "Upload files")
                     }
                 },
             )
@@ -326,10 +401,7 @@ fun FilesScreen(
                                 if (selection.isNotEmpty()) {
                                     selection = if (file.path in selection) selection - file.path else selection + file.path
                                 } else if (file.isDirectory) load(file.path)
-                                else {
-                                    pendingDownload = file
-                                    downloadPicker.launch(file.name)
-                                }
+                                else preview = file
                             },
                             onSelect = {
                                 selection = if (file.path in selection) selection - file.path else selection + file.path
@@ -431,6 +503,53 @@ fun FilesScreen(
         )
         null -> Unit
     }
+
+    if (confirmDeleteSelection) {
+        AlertDialog(
+            onDismissRequest = { confirmDeleteSelection = false },
+            title = { Text("Delete ${selection.size} item(s)?") },
+            text = { Text("The selected files and folders will be permanently deleted.") },
+            confirmButton = {
+                TextButton(onClick = {
+                    val targets = ordered.filter { it.path in selection }
+                    busy = true
+                    scope.launch {
+                        val failures = mutableListOf<String>()
+                        targets.forEach { target ->
+                            runCatching { api.delete(target.path, recursive = target.isDirectory) }
+                                .onFailure { failures += target.name + ": " + (it.message ?: "delete failed") }
+                        }
+                        busy = false
+                        confirmDeleteSelection = false
+                        if (failures.isNotEmpty()) error = failures.joinToString("\n")
+                        load(path)
+                    }
+                }, enabled = !busy) {
+                    Text("Delete", color = MaterialTheme.colorScheme.error)
+                }
+            },
+            dismissButton = { TextButton(onClick = { confirmDeleteSelection = false }) { Text("Cancel") } },
+        )
+    }
+
+    val shown = preview
+    if (shown != null) {
+        FileViewer(
+            file = shown,
+            api = api,
+            onBack = { preview = null },
+            onDownload = {
+                pendingDownload = shown
+                downloadPicker.launch(shown.name)
+            },
+            onOpenWith = {
+                pendingDownload = shown
+                openWithTarget = shown
+                downloadPicker.launch(shown.name)
+            },
+            onCopyPath = { copyPaths(shown.path, context.getString(R.string.copied)) },
+        )
+    }
 }
 
 @Composable
@@ -486,7 +605,7 @@ private fun FileRow(
     }
 }
 
-private fun humanSize(bytes: Long): String {
+internal fun humanSize(bytes: Long): String {
     if (bytes < 1024) return bytes.toString() + " B"
     val units = listOf("KB", "MB", "GB", "TB")
     val exponent = (ln(bytes.toDouble()) / ln(1024.0)).toInt().coerceIn(1, units.size)

@@ -66,6 +66,14 @@ class FileListTest {
     }
 
     @Test
+    fun `preview kind follows the extension`() {
+        assertEquals(PreviewKind.Text, previewKind("notes.md"))
+        assertEquals(PreviewKind.Text, previewKind("LICENSE"))
+        assertEquals(PreviewKind.Image, previewKind("photo.JPG"))
+        assertEquals(PreviewKind.Other, previewKind("app.apk"))
+    }
+
+    @Test
     fun `a stored sort survives the round trip and bad values fall back`() {
         assertEquals(FileSort(FileSortKey.Size, true), FileSort.parse("size:desc"))
         assertEquals(FileSort(), FileSort.parse("nonsense"))

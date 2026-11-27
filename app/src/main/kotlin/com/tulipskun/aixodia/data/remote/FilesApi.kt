@@ -13,6 +13,7 @@ import okhttp3.Request
 import okhttp3.RequestBody
 import okio.BufferedSink
 import org.json.JSONObject
+import java.io.ByteArrayOutputStream
 import java.net.URLEncoder
 import java.util.concurrent.TimeUnit
 
@@ -34,6 +35,11 @@ data class RemoteDirectory(
     val parent: String?,
     val entries: List<RemoteFile>,
 )
+
+/** Bytes read for a preview, with the real length so a cut-off can be said. */
+data class RemoteContent(val bytes: ByteArray, val total: Long) {
+    val truncated: Boolean get() = total < 0L || total > bytes.size.toLong()
+}
 
 class FilesApi(
     private val settings: SettingsStore,
@@ -172,6 +178,26 @@ class FilesApi(
                     out.flush()
                 }
             }
+        }
+    }
+
+    /** Reads at most `limit` bytes of a file, for the preview screen. */
+    suspend fun readLimited(path: String, limit: Int = 1 shl 20): RemoteContent = withContext(Dispatchers.IO) {
+        val request = requestBuilder("/api/files/download?path=" + enc(path)).get().build()
+        client.newCall(request).execute().use { response ->
+            if (!response.isSuccessful) failure(response.code, response.body?.string().orEmpty())
+            val body = response.body ?: throw IllegalStateException("Empty file response")
+            val total = body.contentLength()
+            val out = ByteArrayOutputStream()
+            val buffer = ByteArray(64 * 1024)
+            body.byteStream().use { input ->
+                while (out.size() < limit) {
+                    val count = input.read(buffer, 0, minOf(buffer.size, limit - out.size()))
+                    if (count < 0) break
+                    out.write(buffer, 0, count)
+                }
+            }
+            RemoteContent(out.toByteArray(), total)
         }
     }
 

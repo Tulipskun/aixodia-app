@@ -32,7 +32,7 @@ internal data class FileSort(
     }
 }
 
-private fun extensionOf(name: String): String {
+internal fun extensionOf(name: String): String {
     val dot = name.lastIndexOf('.')
     return if (dot > 0 && dot < name.length - 1) name.substring(dot + 1).lowercase() else ""
 }
@@ -60,3 +60,19 @@ internal fun sortedEntries(entries: List<RemoteFile>, sort: FileSort): List<Remo
 /** Selected paths in displayed order, one per line, ready for the clipboard. */
 internal fun pathsToCopy(ordered: List<RemoteFile>, selected: Set<String>): String =
     ordered.filter { it.path in selected }.joinToString("\n") { it.path }
+
+/** What the preview screen can show without downloading the whole file. */
+internal enum class PreviewKind { Text, Image, Other }
+
+private val TEXT_EXTENSIONS = setOf(
+    "", "txt", "md", "json", "csv", "log", "sh", "kt", "kts", "rs", "py", "js", "jsx",
+    "ts", "tsx", "html", "htm", "css", "xml", "yml", "yaml", "ini", "conf", "toml",
+    "sql", "java", "go", "rb", "php", "diff", "patch", "env",
+)
+private val IMAGE_EXTENSIONS = setOf("png", "jpg", "jpeg", "gif", "webp", "bmp", "heic")
+
+internal fun previewKind(name: String): PreviewKind = when (extensionOf(name)) {
+    in IMAGE_EXTENSIONS -> PreviewKind.Image
+    in TEXT_EXTENSIONS -> PreviewKind.Text
+    else -> PreviewKind.Other
+}
